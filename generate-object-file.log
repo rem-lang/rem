@@ -1,0 +1,61 @@
+import org.bytedeco.javacpp.*;
+import org.bytedeco.llvm.LLVM.*;
+import static org.bytedeco.llvm.global.LLVM.*;
+
+
+
+
+// a 'char *' used to retrieve error messages from LLVM
+private static final BytePointer error = new BytePointer();
+
+
+
+
+
+LLVMContextRef context = LLVMContextCreate();
+LLVMModuleRef module = LLVMModuleCreateWithNameInContext("test", context);
+
+LLVMTypeRef f32 = LLVMFloatTypeInContext(context);
+LLVMTypeRef voidType = LLVMVoidType();
+LLVMTypeRef ftype = LLVMFunctionType(f32, voidType, 0, 0);
+LLVMValueRef ftest = LLVMAddFunction(module, "ftest", ftype);
+LLVMBasicBlockRef bb = LLVMAppendBasicBlockInContext(context, ftest, "ftest");
+LLVMBuilderRef builder = LLVMCreateBuilderInContext(context);
+LLVMPositionBuilderAtEnd(builder, bb);
+LLVMValueRef v1 = LLVMConstReal(f32, 2.5);
+LLVMValueRef v2 = LLVMConstReal(f32, 4.3);
+LLVMValueRef result = LLVMBuildFAdd(builder, v1, v2, "f-add");
+LLVMBuildRet(builder, result);
+LLVMVerifyFunction(ftest, LLVMPrintMessageAction);
+
+LLVMPrintModuleToFile(module, "module.txt", error);
+System.out.printf("error: %s\n", error);
+LLVMDisposeMessage(error);
+
+LLVMInitializeAllTargetInfos();
+LLVMInitializeAllTargets();
+LLVMInitializeAllTargetMCs();
+LLVMInitializeAllAsmParsers();
+LLVMInitializeAllAsmPrinters();
+
+LLVMTargetRef target = new LLVMTargetRef();
+LLVMGetTargetFromTriple(LLVMGetDefaultTargetTriple(), target, error);
+System.out.printf("error: %s\n", error);
+LLVMDisposeMessage(error);
+System.out.printf("target: %s, [%s], %d, %d\n", LLVMGetTargetName(target), LLVMGetTargetDescription(target), LLVMTargetHasJIT(target), LLVMTargetHasTargetMachine(target));
+System.out.printf("triple: %s\n", LLVMGetDefaultTargetTriple());
+System.out.printf("features: %s\n", LLVMGetHostCPUFeatures());
+LLVMTargetMachineRef machine = LLVMCreateTargetMachine(target, LLVMGetDefaultTargetTriple(), new BytePointer("generic"), LLVMGetHostCPUFeatures(), LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+
+LLVMSetTarget(module, LLVMGetDefaultTargetTriple());
+LLVMTargetDataRef dataLayout = LLVMCreateTargetDataLayout(machine);
+var datalayoutStr = LLVMCopyStringRepOfTargetData(dataLayout);
+System.out.printf("dataLayout: %s\n", datalayoutStr);
+LLVMSetDataLayout(module, datalayoutStr);
+LLVMDisposeMessage(datalayoutStr);
+
+LLVMTargetMachineEmitToFile(machine, module, "result.o", LLVMObjectFile, error);
+System.out.printf("error: %s\n", error);
+LLVMDisposeMessage(error);
+
+return linkToExe("result.o", "result");

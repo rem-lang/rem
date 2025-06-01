@@ -1,0 +1,7 @@
+; ModuleID = 'test'
+source_filename = "test"
+
+define float @main() {
+main:
+  ret float 0x401B333340000000
+}
