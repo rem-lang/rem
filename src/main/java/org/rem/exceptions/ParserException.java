@@ -10,7 +10,7 @@ public class ParserException extends RuntimeException {
   private final int offset;
 
   public ParserException(Source source, Token token, String message) {
-    super(message + " on line " + token.line() + ":" + token.offset());
+    super(message + " on line " + token.line() + ":" + source.getLineColumn(token.offset()));
     this.source = source;
     this.line = token.line();
     this.offset = token.offset();

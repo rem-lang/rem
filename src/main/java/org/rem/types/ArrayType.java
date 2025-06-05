@@ -7,7 +7,7 @@ import org.rem.interfaces.IType;
 public final class ArrayType implements IType {
 
   private final IType type;
-  private final long length;
+  private long length;
 
   public ArrayType(IType type, long length) {
     this.type = type;
@@ -24,6 +24,10 @@ public final class ArrayType implements IType {
 
   public long getLength() {
     return length;
+  }
+
+  public void setLength(long length) {
+    this.length = length;
   }
 
   @Override

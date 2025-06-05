@@ -1,5 +1,7 @@
 package org.rem.parser;
 
+import org.rem.parser.ast.AST;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -45,5 +47,11 @@ public class Source {
     }
 
     return offset;
+  }
+
+  public int getLineColumn(int column) {
+    int startColumn = column - getLineStart(column);
+    if(startColumn < 0) startColumn = 0;
+    return startColumn + 1;
   }
 }

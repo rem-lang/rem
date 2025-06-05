@@ -218,8 +218,21 @@ public class Parser {
     return wrap(() -> new Expression.TypedName(identifier, parseType()));
   }
 
+  private Expression.TypedName variableTypedName() {
+    Expression.Identifier identifier = wrap(() -> {
+      consume(IDENTIFIER, "variable name expected");
+      return new Expression.Identifier(previous());
+    });
+
+    if(match(COLON)) {
+      return wrap(() -> new Expression.TypedName(identifier, parseType()));
+    } else {
+      return wrap(() -> new Expression.TypedName(identifier, null));
+    }
+  }
+
   private Expression.TypedName typedName() {
-    return typedName(": type expected");
+    return typedName("variable name expected");
   }
 
   private Expression.Grouping grouping() {
@@ -273,27 +286,27 @@ public class Parser {
   private Expression finishDot(Expression e) {
     return wrap((expr) -> {
       ignoreNewlines();
-      var prop = new Expression.Identifier(
+      var prop = wrap(() -> new Expression.Identifier(
         consume(IDENTIFIER, "property name expected")
-      );
+      ));
 
       if (matchAssigners()) {
         Token token = previous();
         if (token.type() == EQUAL) {
-          expr = new Expression.Set((Expression) expr, prop, expression());
+          expr = new Expression.Set(expr, prop, expression());
         } else {
           expr = new Expression.Set(
             (Expression) expr.clone(),
-            prop,
+            (Expression.Identifier) prop.clone(),
             new Expression.Binary(
-              new Expression.Get((Expression) expr, prop),
+              reflectWrap(expr, prop, new Expression.Get(expr, prop)),
               previous().copyToType(ASSIGNER_ALTS.get(token.type()), previous().literal()),
               assignment()
             )
           );
         }
       } else {
-        expr = new Expression.Get((Expression) expr, prop);
+        expr = new Expression.Get(expr, prop);
       }
 
       return expr;
@@ -454,20 +467,20 @@ public class Parser {
           expression = new Expression.Set(
             (Expression) get.expression.clone(),
             get.name,
-            new Expression.Binary(
+            reflectWrap(get, new Expression.Binary(
               get,
               previous().copyToType(PLUS, "+"),
               new Expression.Int32(1)
-            )
+            ))
           );
         } else {
           expression = new Expression.Assign(
             expression,
-            new Expression.Binary(
+            reflectWrap(expression, new Expression.Binary(
               (Expression) expression.clone(),
               previous().copyToType(PLUS, "+"),
               new Expression.Int32(1)
-            )
+            ))
           );
         }
       } else if (match(DECREMENT)) {
@@ -475,20 +488,20 @@ public class Parser {
           expression = new Expression.Set(
             (Expression) get.expression.clone(),
             get.name,
-            new Expression.Binary(
+            reflectWrap(get, new Expression.Binary(
               get,
               previous().copyToType(MINUS, "-"),
               new Expression.Int32(1)
-            )
+            ))
           );
         } else {
           expression = new Expression.Assign(
             expression,
-            new Expression.Binary(
+            reflectWrap(expression, new Expression.Binary(
               (Expression) expression.clone(),
               previous().copyToType(MINUS, "-"),
               new Expression.Int32(1)
-            )
+            ))
           );
         }
       }
@@ -1153,7 +1166,7 @@ public class Parser {
 
   private Statement varDeclaration(boolean isConstant) {
     return wrap(() -> {
-      Expression.TypedName name = typedName();
+      Expression.TypedName name = variableTypedName();
 
       Statement declaration;
       if (match(EQUAL)) {
@@ -1162,13 +1175,15 @@ public class Parser {
           throw new ParserException(lexer.getSource(), previous(), "incomplete variable declaration");
         }
 
-        declaration = new Statement.Var(name, value, isConstant);
+        declaration = (Statement.Var) reflectWrap(name, value, new Statement.Var(name, value, isConstant));
+      } else if(name.type == null) {
+        throw new ParserException(lexer.getSource(), peek(), "Type or value must be declared");
       } else {
         if (isConstant) {
           throw new ParserException(lexer.getSource(), peek(), "constant value not declared");
         }
 
-        declaration = new Statement.Var(name, new Expression.Nil(), false);
+        declaration = (Statement.Var) reflectWrap(name, new Statement.Var(name, new Expression.Nil(), false));
       }
 
       if (check(COMMA)) {
@@ -1177,7 +1192,7 @@ public class Parser {
 
         while (match(COMMA)) {
           ignoreNewlines();
-          name = typedName();
+          name = variableTypedName();
 
           if (match(EQUAL)) {
             Expression value = expression();
@@ -1185,12 +1200,14 @@ public class Parser {
               throw new ParserException(lexer.getSource(), previous(), "incomplete variable declaration");
             }
 
-            declarations.add(new Statement.Var(name, value, isConstant));
+            declarations.add((Statement) reflectWrap(name, value, new Statement.Var(name, value, isConstant)));
+          } else if(name.type == null) {
+            throw new ParserException(lexer.getSource(), peek(), "Type or value must be declared");
           } else {
             if (isConstant) {
               throw new ParserException(lexer.getSource(), peek(), "constant value not declared");
             }
-            declarations.add(new Statement.Var(name, new Expression.Nil(), false));
+            declarations.add((Statement) reflectWrap(name, new Statement.Var(name, new Expression.Nil(), false)));
           }
         }
 
@@ -1352,21 +1369,33 @@ public class Parser {
       ignoreNewlines();
 
       while (!check(RBRACE) && !check(EOF)) {
-        boolean is_static = false;
+        boolean isStatic;
 
         ignoreNewlines();
 
-        if (match(STATIC)) is_static = true;
+        if (match(STATIC)) isStatic = true;
+        else {
+          isStatic = false;
+        }
 
-        if (match(VAR)) {
-          properties.add(classField(is_static, false));
-        } else if (match(CONST)) {
-          properties.add(classField(is_static, true));
-        } else if (match(DEF)) {
-          operators.add(classOperator());
+        if (check(VAR)) {
+          properties.add(wrap(() -> {
+            match(VAR);
+            return classField(isStatic, false);
+          }));
+        } else if (check(CONST)) {
+          properties.add(wrap(() -> {
+            match(CONST);
+            return classField(isStatic, true);
+          }));
+        } else if (check(DEF)) {
+          operators.add(wrap(() -> {
+            match(DEF);
+            return classOperator();
+          }));
           ignoreNewlines();
         } else {
-          methods.add(method(is_static));
+          methods.add(method(isStatic));
           ignoreNewlines();
         }
       }
@@ -1403,8 +1432,10 @@ public class Parser {
 
       if (match(VAR)) {
         result = varDeclaration(false);
+        endStatement();
       } else if (match(CONST)) {
         result = varDeclaration(true);
+        endStatement();
       } else if (match(DEF)) {
         result = defDeclaration();
       } else if (match(CLASS)) {
@@ -1476,6 +1507,15 @@ public class Parser {
     value.startColumn = template.startColumn;
     value.endLine = template.endLine;
     value.endColumn = template.endColumn;
+    return value;
+  }
+
+  private <T extends AST> T reflectWrap(T startTemplate, T endTemplate, T value) {
+    value.wrapped = true;
+    value.startLine = startTemplate.startLine;
+    value.startColumn = startTemplate.startColumn;
+    value.endLine = endTemplate.endLine;
+    value.endColumn = endTemplate.endColumn;
     return value;
   }
 

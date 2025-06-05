@@ -18,9 +18,9 @@ public class SemanticErrorUtil {
       if(startColumn < 0) startColumn = 0;
 
       StringBuilder builder = new StringBuilder();
-      builder.append(String.format("ERROR: %s at %s:%s:%s", error.description, path, location.startLine, startColumn + 1));
+      builder.append(String.format("ERROR: %s at %s:%s:%s", error.description, path, location.startLine, source.getLineColumn(location.startColumn)));
 
-      String line = String.join("\n", lines.subList(location.startLine - 1, location.endLine));
+      String line = String.join("\n", lines.get(location.startLine - 1));
       builder.append(String.format("\n\t%s", line));
       builder.append(String.format("\n\t%s%s", " ".repeat(startColumn), "^"));
 

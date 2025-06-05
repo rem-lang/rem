@@ -5,6 +5,10 @@ name += 91
 name = 45
 
 class Vec {
+  var a: i32 = 110
+
+  static var b: i8 = 255
+
   @new() {}
 }
 
@@ -75,4 +79,18 @@ var nums: []bool = [true, false]
 
 
 var s: Vec = new Vec()
+var s: i32 = new Vec().a
+var s: i32 = new Vec().b
 var s: Vec = new String()
+
+var q: bool = 1 == 5 ? true : false
+
+var g: Vec = new Vec()
+g.a = 1000
+
+var x = 500
+
+x += 175
+
+var q = 10
+class X {}

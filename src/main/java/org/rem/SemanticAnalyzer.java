@@ -30,11 +30,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
    */
   private AST inferenceContext;
 
-  /**
-   * Index of the current function argument.
-   */
-  private int argumentIndex;
-
   public SemanticAnalyzer(Reactor reactor) {
     this.R = reactor;
     scope = new RootScope(reactor);
@@ -58,35 +53,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     if (a == VoidType.INSTANCE || b == VoidType.INSTANCE)
       return false;
 
-    // TODO: Handle other types
     return a.isReference() && b.isReference()
       || a.equals(b)
-      || TypeUtil.isNumericType(a) && TypeUtil.isNumericType(b);
-  }
-
-  /**
-   * Indicates whether a value of type {@code a} can be assigned to a location (variable,
-   * parameter, ...) of type {@code b}.
-   */
-  private static boolean isAssignableTo(IType a, IType b) {
-    if (a == VoidType.INSTANCE || b == VoidType.INSTANCE)
-      return false;
-
-    if (a.equals(b)) return true;
-
-    // The last check is pretty important because:
-    // var a: f64 = 10 # This is valid code. However,
-    // var a: i32 = 1.5 # is invalid and not allowed!
-    if (TypeUtil.isNumericType(a) && TypeUtil.isNumericType(b) && TypeUtil.max(a, b) == b)
-      return true;
-
-    // TODO: Handle other types
-
-    if (a instanceof ArrayType)
-      return b instanceof ArrayType
-        && b.isAssignableTo(a);
-
-    return a == NilType.INSTANCE && b.isReference();
+      || TypeUtil.isNumericType(a) && TypeUtil.isNumericType(b)
+      || a.type().compareTo(b.type()) == 0;
   }
 
   /**
@@ -150,6 +120,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   @Override
   public void visitLiteralExpression(Expression.Literal expr) {
 
+    // TODO: Implement
   }
 
   @Override
@@ -273,6 +244,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   @Override
   public void visitRangeExpression(Expression.Range expr) {
 
+    // TODO: Implement
   }
 
   @Override
@@ -334,9 +306,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitTypedNameExpression(Expression.TypedName expr) {
-    visitTyped(expr.type);
-
     scope.declare(expr.name.token.literal(), expr);
+
+    if (expr.type == null) return;
+
+    visitTyped(expr.type);
 
     R.rule(expr, "type")
       .using(expr.type, "value")
@@ -399,9 +373,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType maybeFunType = r.get(0);
 
-        // TODO: Handle constructor call, and module calls (if we decide to support it here...)
-        // NOTE: Constructor calls actually need to be handled in the NewExpression which should
-        // return a proper DefType to the constructor
         if (!(maybeFunType instanceof DefType funType)) {
           r.error("Cannot call non-function: " + expr.callee, expr.callee);
           return;
@@ -453,9 +424,53 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   @Override
   public void visitGetExpression(Expression.Get expr) {
     visitExpression(expr.expression);
-    visitExpression(expr.name);
 
-    // TODO: Implement
+    R.rule()
+      .using(expr.expression, "type")
+      .by(r -> {
+        IType type = r.get(0);
+
+        if (type instanceof ArrayType) {
+          // FIXME: May need to ditch this when if decide that arrays do not have fields.
+          if (expr.name.token.literal().equals("length")) {
+            R.rule(expr, "type")
+              .by(rr -> rr.set(0, I32Type.INSTANCE));
+          } else {
+            r.errorFor(
+              "Cannot access a non-length field on an array", expr,
+              expr.attr("type")
+            );
+          }
+          return;
+        }
+
+        if (!(type instanceof ClassType classType)) {
+          r.errorFor(
+            "Cannot access a field on a value of type " + type,
+            expr,
+            expr.attr("type")
+          );
+          return;
+        }
+
+        Statement.Class aClass = classType.getDeclaration();
+        String getName = expr.name.token.literal();
+
+        for (Statement.Property property : aClass.properties) {
+          if (!property.name.name.token.literal().equals(getName)) continue;
+
+          R.rule(expr, "type")
+            .using(property, "type")
+            .by(Rule::copyFirst);
+
+          return;
+        }
+
+        r.errorFor(
+          String.format("Cannot access unknown field '%s' on class `%s`", getName, aClass.name.literal()),
+          expr, expr.attr("type")
+        );
+      });
   }
 
   @Override
@@ -465,6 +480,68 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     visitExpression(expr.value);
 
     // TODO: Implement
+    R.rule()
+      .using(expr.expression.attr("type"), expr.value.attr("type"))
+      .by(r -> {
+        IType iType = r.get(0);
+        IType valueType = r.get(1);
+
+        if (iType instanceof ArrayType) {
+          // FIXME: May need to ditch this when if decide that arrays do not have fields.
+          if (expr.name.token.literal().equals("length")) {
+            r.errorFor("Cannot set length of array element directly", expr.name);
+          } else {
+            r.errorFor(
+              "Cannot access a non-length field on an array", expr,
+              expr.attr("type")
+            );
+          }
+          return;
+        }
+
+        if (!(iType instanceof ClassType classType)) {
+          r.errorFor(
+            "Cannot update a field on a value of type " + iType,
+            expr,
+            expr.attr("type")
+          );
+          return;
+        }
+
+        Statement.Class aClass = classType.getDeclaration();
+        String getName = expr.name.token.literal();
+
+        final String className = aClass.name.literal();
+
+        for (Statement.Property property : aClass.properties) {
+          if (!property.name.name.token.literal().equals(getName)) continue;
+
+          R.rule(expr, "type")
+            .using(property, "type")
+            .by(r1 -> {
+              IType type = r1.get(0);
+
+              if (!type.isAssignableFrom(valueType)) {
+                r1.errorFor(
+                  String.format(
+                    "Cannot assign value of type `%s` to field '%s' of type `%s` in class `%s`",
+                    valueType, getName, type, className
+                  ),
+                  expr.value
+                );
+              }
+
+              r1.set(0, type);
+            });
+
+          return;
+        }
+
+        r.errorFor(
+          String.format("Cannot access unknown field '%s' on class `%s`", getName, className),
+          expr, expr.attr("type")
+        );
+      });
   }
 
   @Override
@@ -480,7 +557,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         // TODO: Handle non integer indexing on dictionary maps
 
         if (!TypeUtil.isIntegerType(type))
-          r.error("Indexing an array using a non-Int-valued expression", expr.argument);
+          r.error("Indexing an array using a value that's not assignable to `i32`", expr.argument);
       });
 
     R.rule(expr, "type")
@@ -739,8 +816,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           || expr.expression instanceof Expression.Index) {
           if (!right.isAssignableTo(left))
             r.errorFor(String.format("Error assigning a value of type of %s to %s", right.name(), left.name()), expr);
-        } else
+        } else {
           r.errorFor("Trying to assign to an non-lvalue expression", expr.expression);
+        }
       });
   }
 
@@ -968,6 +1046,12 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
     String name = stmt.typedName.name.token.literal();
 
+    if(stmt.typedName.type == null) {
+      R.rule(stmt.typedName, "type")
+        .using(stmt.value, "type")
+        .by(Rule::copyFirst);
+    }
+
     scope.declare(name, stmt);
     R.set(stmt, "scope", scope);
 
@@ -1018,9 +1102,12 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             ),
             stmt.value
           );
+        } else if (expected instanceof ArrayType expectedArrayType && actual instanceof ArrayType actualArrayType1) {
+          // If actual has a defined length, update the type to contain the actual size of the array.
+          if (expectedArrayType.getLength() == 0 && actualArrayType1.getLength() > 0) {
+            expectedArrayType.setLength(actualArrayType1.getLength());
+          }
         }
-
-        // TODO: If actual is a list literal, update the type to contain the actual size of the list.
       });
   }
 
@@ -1111,8 +1198,28 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitPropertyStatement(Statement.Property stmt) {
+    visitExpression(stmt.value);
+    visitTypedNameExpression(stmt.name);
 
-    // TODO: Implement
+    R.rule(stmt, "type")
+      .using(stmt.name.attr("type"), stmt.value.attr("type"))
+      .by(r -> {
+        IType nameType = r.get(0);
+        IType valueType = r.get(1);
+
+        if (!nameType.isAssignableFrom(valueType)) {
+          r.errorFor(
+            String.format(
+              "Cannot assign value of type %s to field '%s' of type %s",
+              valueType, stmt.name.name.token.literal(), nameType
+            ),
+            stmt.value
+          );
+        }
+
+        // go ahead and set the type
+        r.set(0, nameType);
+      });
   }
 
   @Override
@@ -1160,6 +1267,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         R.set(method, "class", rClass);
         visitMethodStatement(method);
       }
+
+      for (Statement.Property property : stmt.properties) {
+        visitPropertyStatement(property);
+      }
     } else {
       ClassType rClass = new ClassType(stmt);
 
@@ -1169,6 +1280,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       for (Statement.Method method : stmt.methods) {
         R.set(method, "class", rClass);
         visitMethodStatement(method);
+      }
+
+      for (Statement.Property property : stmt.properties) {
+        visitPropertyStatement(property);
       }
     }
   }
@@ -1262,6 +1377,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitTyped(Typed typed) {
+    if (typed == null) return;
     typed.accept(this);
   }
 
