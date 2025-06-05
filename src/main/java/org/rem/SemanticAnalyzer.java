@@ -20,18 +20,22 @@ import java.util.stream.IntStream;
 
 // TODO: Detect loops that always evaluate to true without a break statement and warn
 // TODO: Detect loops that always evaluate to false and mark it for removal in final compilation
+@SuppressWarnings("StatementWithEmptyBody")
 public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement.VoidVisitor, Typed.VoidVisitor {
 
   private final Reactor R;
+  private final boolean showWarnings;
   private Scope scope;
 
   /**
    * Current context for type inference (currently only to infer the type of empty arrays).
    */
   private AST inferenceContext;
+  private AST methodContext;
 
-  public SemanticAnalyzer(Reactor reactor) {
+  public SemanticAnalyzer(Reactor reactor, boolean showWarnings) {
     this.R = reactor;
+    this.showWarnings = showWarnings;
     scope = new RootScope(reactor);
   }
 
@@ -74,10 +78,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       return null;
   }
 
-  private static boolean isTypeDeclaration(AST decl) {
-    if (decl instanceof Statement.Class) return true;
+  private static boolean isTypeDeclaration(AST declaration) {
+    if (declaration instanceof Statement.Class) return true;
 
-    if (!(decl instanceof BuiltInTypeNode typeNode)) return false;
+    if (!(declaration instanceof BuiltInTypeNode typeNode)) return false;
     return typeNode.kind() == DeclarationKind.TYPE;
   }
 
@@ -387,7 +391,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (params.length != args.size()) {
           r.errorFor(
             String.format(
-              "Wrong number of arguments, expected %d but got %d",
+              "Wrong number of arguments, expected %d but got %d argument(s)",
               params.length,
               args.size()
             ),
@@ -456,6 +460,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         Statement.Class aClass = classType.getDeclaration();
         String getName = expr.name.token.literal();
 
+        // check properties first
         for (Statement.Property property : aClass.properties) {
           if (!property.name.name.token.literal().equals(getName)) continue;
 
@@ -466,8 +471,19 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           return;
         }
 
+        // check methods next
+        for (Statement.Method method : aClass.methods) {
+          if (!method.name.literal().equals(getName)) continue;
+
+          R.rule(expr, "type")
+            .using(method, "type")
+            .by(Rule::copyFirst);
+
+          return;
+        }
+
         r.errorFor(
-          String.format("Cannot access unknown field '%s' on class `%s`", getName, aClass.name.literal()),
+          String.format("Cannot access unknown field or method '%s' on class `%s`", getName, aClass.name.literal()),
           expr, expr.attr("type")
         );
       });
@@ -479,7 +495,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     visitExpression(expr.name);
     visitExpression(expr.value);
 
-    // TODO: Implement
     R.rule()
       .using(expr.expression.attr("type"), expr.value.attr("type"))
       .by(r -> {
@@ -787,14 +802,48 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitParentExpression(Expression.Parent expr) {
+    if (methodContext != null) {
+      R.rule(expr, "type")
+        .using(methodContext, "class")
+        .by(r -> {
+          ClassType type = r.get(0);
+          ClassType superClass = type.getSuperClass();
 
-    // TODO: Implement
+          if (superClass == null) {
+            r.errorFor(
+              String.format(
+                "Class %s does not declare `parent` as it has no superclass",
+                type
+              ), expr
+            );
+
+            r.set(0, type);
+          } else {
+            r.set(0, superClass);
+          }
+        });
+    } else {
+      R.rule(expr, "type")
+        .by(r -> {
+          r.errorFor("Cannot declare variable `parent` outside of a non-static class method", expr);
+          r.set(0, VoidType.INSTANCE);
+        });
+    }
   }
 
   @Override
   public void visitSelfExpression(Expression.Self expr) {
-
-    // TODO: Implement
+    if (methodContext != null) {
+      R.rule(expr, "type")
+        .using(methodContext, "class")
+        .by(Rule::copyFirst);
+    } else {
+      R.rule(expr, "type")
+        .by(r -> {
+          r.errorFor("Cannot declare variable `self` outside of a non-static class method", expr);
+          r.set(0, VoidType.INSTANCE);
+        });
+    }
   }
 
   @Override
@@ -811,11 +860,16 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         r.set(0, r.get(0)); // the type of the assignment is the left-side type
 //        r.set(1, r.get(0)); // the type of the assignment is the left-side type
 
-        if (expr.expression instanceof Expression.Identifier
+        if (expr.expression instanceof Expression.Self) {
+          r.errorFor("Cannot assign value to `self`", expr.expression);
+        } else if (expr.expression instanceof Expression.Parent) {
+          r.errorFor("Cannot assign value to `parent`", expr.expression);
+        } else if (expr.expression instanceof Expression.Identifier
           || expr.expression instanceof Expression.Get
           || expr.expression instanceof Expression.Index) {
-          if (!right.isAssignableTo(left))
+          if (!right.isAssignableTo(left)) {
             r.errorFor(String.format("Error assigning a value of type of %s to %s", right.name(), left.name()), expr);
+          }
         } else {
           r.errorFor("Trying to assign to an non-lvalue expression", expr.expression);
         }
@@ -841,7 +895,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   public void visitEchoStatement(Statement.Echo stmt) {
     visitExpression(stmt.value);
 
-    // TODO: Implement
+    R.rule(stmt, "type")
+      .using(stmt.value, "type")
+      .by(Rule::copyFirst);
   }
 
   @Override
@@ -944,42 +1000,77 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     R.set(stmt, "returns", true);
 
     Statement.Function function = currentFunction();
-    if (function == null) // top-level return
-      return;
+    if (function == null) { // top-level return or method
+      Statement.Method method = currentMethod();
+      if (method == null) // top-level return
+        return;
 
-    boolean isConstructor = function.name.literal().equals("@new");
+      boolean isConstructor = method.name.literal().equals("@new");
 
-    if (stmt.value == null) {
-      R.rule()
-        .using(function.returnType, "value")
-        .by(r -> {
-          IType returnType = r.get(0);
-          if (returnType != VoidType.INSTANCE)
-            r.error("Return without value in a function with a return type", stmt);
-        });
+      if (stmt.value == null) {
+        R.rule()
+          .using(method.returnType, "value")
+          .by(r -> {
+            IType returnType = r.get(0);
+
+            if (returnType != VoidType.INSTANCE) {
+              r.error("Return without value in a method with a return type", stmt);
+            }
+          });
+      } else {
+        R.rule()
+          .using(method.returnType.attr("value"), stmt.value.attr("type"))
+          .by(r -> {
+            IType expected = r.get(0);
+            IType actual = r.get(1);
+
+            if (expected == VoidType.INSTANCE && !isConstructor) {
+              r.error("Return with value in a void method", stmt);
+            } else if (isConstructor && expected != VoidType.INSTANCE) {
+              r.error("Cannot return value from constructor", stmt);
+            } else if (!actual.isAssignableTo(expected)) {
+              r.errorFor(
+                String.format(
+                  "Incompatible return type, expected %s but got %s", expected, actual),
+                stmt.value
+              );
+            }
+          });
+      }
     } else {
-      R.rule()
-        .using(function.returnType.attr("value"), stmt.value.attr("type"))
-        .by(r -> {
-          IType expected = r.get(0);
-          IType actual = r.get(1);
+      boolean isConstructor = function.name.literal().equals("@new");
 
-          if (expected == VoidType.INSTANCE && !isConstructor) {
-            r.error("Return with value in a void function", stmt);
-          } else if (isConstructor && expected != VoidType.INSTANCE) {
-            r.error("Cannot return value from constructor", stmt);
-          } else if (!actual.isAssignableTo(expected)) {
-            r.errorFor(
-              String.format(
-                "Incompatible return type, expected %s but got %s", expected, actual),
-              stmt.value
-            );
-          }
-        });
+      if (stmt.value == null) {
+        R.rule()
+          .using(function.returnType, "value")
+          .by(r -> {
+            IType returnType = r.get(0);
+
+            if (returnType != VoidType.INSTANCE) {
+              r.error("Return without value in a function with a return type", stmt);
+            }
+          });
+      } else {
+        R.rule()
+          .using(function.returnType.attr("value"), stmt.value.attr("type"))
+          .by(r -> {
+            IType expected = r.get(0);
+            IType actual = r.get(1);
+
+            if (expected == VoidType.INSTANCE && !isConstructor) {
+              r.error("Return with value in a void function", stmt);
+            } else if (!actual.isAssignableTo(expected)) {
+              r.errorFor(
+                String.format(
+                  "Incompatible return type, expected %s but got %s", expected, actual),
+                stmt.value
+              );
+            }
+          });
+      }
     }
   }
 
-  @SuppressWarnings("StatementWithEmptyBody")
   @Override
   public void visitAssertStatement(Statement.Assert stmt) {
     visitExpression(stmt.expression);
@@ -1046,7 +1137,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
     String name = stmt.typedName.name.token.literal();
 
-    if(stmt.typedName.type == null) {
+    if (stmt.typedName.type == null) {
       R.rule(stmt.typedName, "type")
         .using(stmt.value, "type")
         .by(Rule::copyFirst);
@@ -1100,7 +1191,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
               "Incompatible initializer type provided for variable `%s`: expected %s but got %s",
               name, expected, actual
             ),
-            stmt.value
+            stmt
           );
         } else if (expected instanceof ArrayType expectedArrayType && actual instanceof ArrayType actualArrayType1) {
           // If actual has a defined length, update the type to contain the actual size of the array.
@@ -1150,13 +1241,16 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         r.set(0, new DefType(rType, isVariadic, paramTypes));
       });
 
+    methodContext = isMethod ? (((Statement.Method) statement).isStatic ? null : statement) : null;
     visitStatement(body);
+    methodContext = null;
 
     R.rule()
       .using(body.attr("returns"), returnType.attr("value"))
       .by(r -> {
         boolean returns = r.get(0);
         IType rType = r.get(1);
+
         if (!returns && rType != VoidType.INSTANCE) {
           r.error(String.format("Missing return in function. Expecting %s", rType), returnType);
         }
@@ -1408,6 +1502,18 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       AST node = scope.node;
       if (node instanceof Statement.Function)
         return (Statement.Function) node;
+      scope = scope.parent;
+    }
+
+    return null;
+  }
+
+  private Statement.Method currentMethod() {
+    Scope scope = this.scope;
+    while (scope != null) {
+      AST node = scope.node;
+      if (node instanceof Statement.Method)
+        return (Statement.Method) node;
       scope = scope.parent;
     }
 

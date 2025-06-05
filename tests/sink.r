@@ -9,11 +9,19 @@ class Vec {
 
   static var b: i8 = 255
 
-  @new() {}
+  @new() {
+    self.b = 1971
+  }
 }
 
 class Map {}
-class String < Vec {}
+
+class String < Vec {
+  get(a: i8) Vec {
+    parent.b = a
+    return parent
+  }
+}
 
 var ages: []Vec = []
 
@@ -80,8 +88,9 @@ var nums: []bool = [true, false]
 
 var s: Vec = new Vec()
 var s: i32 = new Vec().a
-var s: i32 = new Vec().b
-var s: Vec = new String()
+var s = new Vec().b
+
+var s: Vec = new String().get(14)
 
 var q: bool = 1 == 5 ? true : false
 

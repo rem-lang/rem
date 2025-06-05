@@ -24,6 +24,10 @@ public final class ClassType implements IType {
     return declaration;
   }
 
+  public ClassType getSuperClass() {
+    return superClass;
+  }
+
   @Override
   public TypeEnum type() {
     return TypeEnum.CLASS;

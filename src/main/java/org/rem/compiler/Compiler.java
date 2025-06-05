@@ -19,9 +19,11 @@ import java.util.Set;
 public class Compiler {
 
   private final CompileRequest request;
+  private final boolean showWarnings;
 
-  public Compiler(CompileRequest request) {
+  public Compiler(CompileRequest request, boolean showWarnings) {
     this.request = request;
+    this.showWarnings = showWarnings;
   }
 
   public CompileResult<?> compile() throws IOException {
@@ -31,7 +33,7 @@ public class Compiler {
     List<Statement> parseResult = parser.parse();
 
     Reactor reactor = new Reactor();
-    SemanticAnalyzer analyzer = new SemanticAnalyzer(reactor);
+    SemanticAnalyzer analyzer = new SemanticAnalyzer(reactor, showWarnings);
     analyzer.analyze(parseResult);
 
     reactor.run();

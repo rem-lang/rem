@@ -11,12 +11,17 @@ public class Main {
   public static void main(String[] args) {
     if (args.length > 0) {
       String file = args[0];
+
+      // TODO: Make configurable
+      boolean showWarnings = true;
+
       try {
         Compiler compiler = new Compiler(
           new CompileRequest(
             new File(file),
             "llvm"
-          )
+          ),
+          showWarnings
         );
 
         System.exit(compiler.generate(compiler.compile()));
