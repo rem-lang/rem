@@ -6,7 +6,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
 
-public abstract class AST {
+public class AST implements Cloneable {
   public int startLine = 1;
   public int endLine = 1;
   public int startColumn = 0;
@@ -25,5 +25,16 @@ public abstract class AST {
 
   public String astName() {
     return "ast";
+  }
+
+  @Override
+  public AST clone() {
+    try {
+      AST clone = (AST) super.clone();
+      // TODO: copy mutable state here, so the clone can't change the internals of the original
+      return clone;
+    } catch (CloneNotSupportedException e) {
+      throw new AssertionError();
+    }
   }
 }

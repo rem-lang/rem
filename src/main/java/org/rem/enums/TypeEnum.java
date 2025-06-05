@@ -14,7 +14,6 @@ public enum TypeEnum {
   F64,
   F128,
   ARRAY,
-  PARAMETERIZED,
   MAPPED,
   DEF,
   CLASS,

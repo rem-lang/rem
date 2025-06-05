@@ -18,4 +18,16 @@ public interface IType {
   default String name() {
     return type().toString().toLowerCase();
   }
+
+  default boolean isAssignableTo(IType type) {
+    return false;
+  }
+
+  default boolean isAssignableFrom(IType type) {
+    return false;
+  }
+
+  default IType asReference() {
+    return this;
+  }
 }

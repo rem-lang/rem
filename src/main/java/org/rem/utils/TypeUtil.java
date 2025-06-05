@@ -25,4 +25,12 @@ public class TypeUtil {
   public static boolean isBoolean(IType type) {
     return type.type() == TypeEnum.BOOL;
   }
+
+  public static boolean isArray(IType type) {
+    return type.type() == TypeEnum.ARRAY;
+  }
+
+  public static boolean isMap(IType type) {
+    return type.type() == TypeEnum.MAPPED;
+  }
 }

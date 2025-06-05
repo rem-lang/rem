@@ -15,4 +15,14 @@ public final class BoolType implements IType {
   public String toString() {
     return name();
   }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    return isAssignableTo(type);
+  }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    return type.type() == TypeEnum.BOOL;
+  }
 }

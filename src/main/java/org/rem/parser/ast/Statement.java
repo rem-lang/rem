@@ -499,13 +499,15 @@ public abstract class Statement extends AST {
   }
 
   public static class Class extends Statement {
-    public final ClassDescriptor descriptor;
+    public final Token name;
+    public final Expression.Identifier superclass;
     public final List<Property> properties;
     public final List<Method> methods;
     public final List<Method> operators;
 
-    public Class(ClassDescriptor descriptor, List<Property> properties, List<Method> methods, List<Method> operators) {
-      this.descriptor = descriptor;
+    public Class(Token name, Expression.Identifier superclass, List<Property> properties, List<Method> methods, List<Method> operators) {
+      this.name = name;
+      this.superclass = superclass;
       this.properties = properties;
       this.methods = methods;
       this.operators = operators;

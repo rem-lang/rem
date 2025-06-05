@@ -20,4 +20,14 @@ public final class VoidType implements IType {
   public String toString() {
     return name();
   }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    return false;
+  }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    return type == INSTANCE;
+  }
 }

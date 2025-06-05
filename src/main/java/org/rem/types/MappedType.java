@@ -4,7 +4,7 @@ import org.jspecify.annotations.NonNull;
 import org.rem.enums.TypeEnum;
 import org.rem.interfaces.IType;
 
-public record MappedType(IType outerType, IType keyType, IType valueType) implements IType {
+public record MappedType(IType keyType, IType valueType) implements IType {
 
   @Override
   public TypeEnum type() {
@@ -13,7 +13,7 @@ public record MappedType(IType outerType, IType keyType, IType valueType) implem
 
   @Override
   public @NonNull String name() {
-    return outerType.name() + "<" + keyType.name() + ", " + valueType.name() + ">";
+    return "[" + keyType.name() + "]" + valueType.name();
   }
 
   @Override
@@ -25,5 +25,21 @@ public record MappedType(IType outerType, IType keyType, IType valueType) implem
   @NonNull
   public String toString() {
     return name();
+  }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    if (type instanceof MappedType(IType rKeyType, IType rValueType)) {
+      return keyType.isAssignableFrom(rKeyType) && valueType.isAssignableFrom(rValueType);
+    }
+    return false;
+  }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    if (type instanceof MappedType(IType rKeyType, IType rValueType)) {
+      return rKeyType.isAssignableTo(this.keyType) && rValueType.isAssignableTo(this.valueType);
+    }
+    return false;
   }
 }

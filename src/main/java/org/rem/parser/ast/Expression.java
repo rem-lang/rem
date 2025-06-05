@@ -549,11 +549,9 @@ public abstract class Expression extends AST {
 
   public static class New extends Expression {
     public final Expression expression;
-    public final List<Expression> arguments;
 
-    public New(Expression expression, List<Expression> arguments) {
+    public New(Expression expression) {
       this.expression = expression;
-      this.arguments = arguments;
     }
 
     public <T> T accept(Visitor<T> visitor) {

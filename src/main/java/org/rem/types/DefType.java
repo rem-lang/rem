@@ -77,4 +77,14 @@ public final class DefType implements IType {
 
     return returnType.equals(type.returnType) && Arrays.equals(parameterTypes, type.parameterTypes);
   }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    return equals(type);
+  }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    return isAssignableTo(type);
+  }
 }

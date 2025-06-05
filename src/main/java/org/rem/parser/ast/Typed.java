@@ -14,26 +14,43 @@ public abstract class Typed extends AST {
   }
 
   public interface Visitor<T> {
+    T visitVoidTyped(Void typed);
     T visitIdTyped(Id typed);
     T visitArrayTyped(Array typed);
-    T visitParameterizedTyped(Parameterized typed);
     T visitMapTyped(Map typed);
     T visitTyped(Typed typed);
   }
 
 
   public interface VoidVisitor {
+    void visitVoidTyped(Void typed);
     void visitIdTyped(Id typed);
     void visitArrayTyped(Array typed);
-    void visitParameterizedTyped(Parameterized typed);
     void visitMapTyped(Map typed);
     void visitTyped(Typed typed);
   }
 
-  public static class Id extends Typed {
-    public final String name;
+  public static class Void extends Typed {
+    public Void() {
+    }
 
-    public Id(String name) {
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitVoidTyped(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitVoidTyped(this);
+    }
+
+    @Override public String astName() {
+      return "void typed";
+    }
+  }
+
+  public static class Id extends Typed {
+    public final Expression.Identifier name;
+
+    public Id(Expression.Identifier name) {
       this.name = name;
     }
 
@@ -51,10 +68,10 @@ public abstract class Typed extends AST {
   }
 
   public static class Array extends Typed {
-    public final String name;
+    public final Typed type;
 
-    public Array(String name) {
-      this.name = name;
+    public Array(Typed type) {
+      this.type = type;
     }
 
     public <T> T accept(Visitor<T> visitor) {
@@ -70,35 +87,11 @@ public abstract class Typed extends AST {
     }
   }
 
-  public static class Parameterized extends Typed {
-    public final String name;
-    public final Typed innerType;
-
-    public Parameterized(String name, Typed innerType) {
-      this.name = name;
-      this.innerType = innerType;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitParameterizedTyped(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitParameterizedTyped(this);
-    }
-
-    @Override public String astName() {
-      return "parameterized typed";
-    }
-  }
-
   public static class Map extends Typed {
-    public final String name;
     public final Typed keyType;
     public final Typed valueType;
 
-    public Map(String name, Typed keyType, Typed valueType) {
-      this.name = name;
+    public Map(Typed keyType, Typed valueType) {
       this.keyType = keyType;
       this.valueType = valueType;
     }

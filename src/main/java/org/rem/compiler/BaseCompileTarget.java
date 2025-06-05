@@ -257,17 +257,17 @@ public class BaseCompileTarget<T> implements ICompileTarget<T> {
   }
 
   @Override
+  public T visitVoidTyped(Typed.Void typed) {
+    return null;
+  }
+
+  @Override
   public T visitIdTyped(Typed.Id typed) {
     return null;
   }
 
   @Override
   public T visitArrayTyped(Typed.Array typed) {
-    return null;
-  }
-
-  @Override
-  public T visitParameterizedTyped(Typed.Parameterized typed) {
     return null;
   }
 

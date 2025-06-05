@@ -33,7 +33,7 @@ public final class ArrayType implements IType {
 
   @Override
   public @NonNull String name() {
-    return type.name() + "[]";
+    return "[]" + type.name();
   }
 
   @Override
@@ -44,5 +44,15 @@ public final class ArrayType implements IType {
   @Override
   public String toString() {
     return name();
+  }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    return type.type() == TypeEnum.ARRAY && ((ArrayType) type).getType().isAssignableFrom(this.type);
+  }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    return isAssignableTo(type);
   }
 }

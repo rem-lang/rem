@@ -15,4 +15,14 @@ public final class I128Type implements IType {
   public String toString() {
     return name();
   }
+
+  @Override
+  public boolean isAssignableFrom(IType type) {
+    return isAssignableTo(type);
+  }
+
+  @Override
+  public boolean isAssignableTo(IType type) {
+    return type.type().compareTo(TypeEnum.I8) >= 0 && type.type().compareTo(TypeEnum.I128) <= 0;
+  }
 }

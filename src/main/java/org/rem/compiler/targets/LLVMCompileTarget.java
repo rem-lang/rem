@@ -34,10 +34,6 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
         ArrayType vecType = (ArrayType) type;
         yield LLVMArrayType2(llvmType(context, vecType.getType()), vecType.getLength());
       }
-      case PARAMETERIZED -> {
-        VecType vecType = (VecType) type;
-        yield LLVMVectorType(llvmType(context, vecType.getType()), vecType.getLength());
-      }
       case DEF -> {
         DefType defType = (DefType) type;
         IType[] parameters = defType.getParameterTypes();

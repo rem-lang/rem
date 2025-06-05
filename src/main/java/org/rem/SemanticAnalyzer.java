@@ -15,6 +15,7 @@ import org.rem.utils.TypeUtil;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.IntStream;
 
 
 // TODO: Detect loops that always evaluate to true without a break statement and warn
@@ -79,11 +80,28 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     if (TypeUtil.isNumericType(a) && TypeUtil.isNumericType(b) && TypeUtil.max(a, b) == b)
       return true;
 
+    // TODO: Handle other types
+
     if (a instanceof ArrayType)
       return b instanceof ArrayType
-        && isAssignableTo(((ArrayType) a).getType(), ((ArrayType) b).getType());
+        && b.isAssignableTo(a);
 
     return a == NilType.INSTANCE && b.isReference();
+  }
+
+  /**
+   * Returns the common type between both types, or {@code null} if no such supertype
+   * exists.
+   */
+  private static IType getCommonType(IType a, IType b) {
+    if (a == VoidType.INSTANCE || b == VoidType.INSTANCE)
+      return null;
+    if (a.isAssignableTo(b))
+      return b;
+    if (b.isAssignableTo(a))
+      return a;
+    else
+      return null;
   }
 
   private static boolean isTypeDeclaration(AST decl) {
@@ -149,7 +167,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             R.set(expr, "type", opType);
 
             if (!TypeUtil.isIntegerType(opType))
-              r.error(String.format("Invalid bitwise operation '%s' on value of type %s", expr.op.literal(), opType), expr);
+              r.error(
+                String.format("Invalid bitwise operation '%s' on value of type %s", expr.op.literal(), opType),
+                expr
+              );
           });
         break;
       }
@@ -218,7 +239,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           }
         }
 
-        // TODO: Handle other operations
+        // TODO: Handle operator overloading.
       });
   }
 
@@ -265,7 +286,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitIdentifierExpression(Expression.Identifier expr) {
-    final Scope scope = this.scope;
 
     // Try to look up immediately. This must succeed for variables, but not necessarily for
     // functions or types. By looking up now, we can report looked-up variables later
@@ -290,15 +310,19 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         AST ast = ctx == null ? null : ctx.declaration();
 
         if (ctx == null) {
-          r.errorFor("Could not resolve: " + name,
-            expr, expr.attr("ast"), expr.attr("scope"), expr.attr("type"));
+          r.errorFor(
+            "Could not resolve: " + name,
+            expr, expr.attr("ast"), expr.attr("scope"), expr.attr("type")
+          );
         } else {
           r.set(expr, "scope", ctx.scope());
           r.set(expr, "ast", ast);
 
           if (ast instanceof Statement.Var) {
-            r.errorFor("Variable used before declaration: " + name,
-              expr, expr.attr("type"));
+            r.errorFor(
+              "Variable used before declaration: " + name,
+              expr, expr.attr("type")
+            );
           } else {
             R.rule(expr, "type")
               .using(ast, "type")
@@ -342,7 +366,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           r.errorFor("Both sides of a conditional operation cannot evaluate to nil", expr);
 
         if (!truthy.type().equals(falsy.type()) && !(truthIsNil || falseIsNil))
-          r.errorFor(String.format("Incompatible evaluation results for truth and false condition: %s and %s", truthy, falsy), expr.falsy);
+          r.errorFor(
+            String.format(
+              "Incompatible evaluation results for truth and false condition: %s and %s",
+              truthy,
+              falsy
+            ), expr.falsy
+          );
 
         r.set(0, truthIsNil ? falsy : truthy);
       });
@@ -350,12 +380,74 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitCallExpression(Expression.Call expr) {
-    visitExpression(expr.callee);
-    for (var arg : expr.args) {
+    inferenceContext = expr;
+
+    Attribute[] dependencies = new Attribute[expr.args.size() + 1];
+    dependencies[0] = expr.callee.attr("type");
+    for (int i = 0; i < expr.args.size(); i++) {
+      Expression arg = expr.args.get(i);
+
+      dependencies[i + 1] = arg.attr("type");
+      R.set(arg, "index", i);
       visitExpression(arg);
     }
 
-    // TODO: Implement
+    visitExpression(expr.callee);
+
+    R.rule(expr, "type")
+      .using(dependencies)
+      .by(r -> {
+        IType maybeFunType = r.get(0);
+
+        // TODO: Handle constructor call, and module calls (if we decide to support it here...)
+        // NOTE: Constructor calls actually need to be handled in the NewExpression which should
+        // return a proper DefType to the constructor
+        if (!(maybeFunType instanceof DefType funType)) {
+          r.error("Cannot call non-function: " + expr.callee, expr.callee);
+          return;
+        }
+
+        r.set(0, funType.getReturnType());
+
+        IType[] params = funType.getParameterTypes();
+        List<Expression> args = expr.args;
+
+        // TODO: Handle variadic arguments
+        if (params.length != args.size()) {
+          r.errorFor(
+            String.format(
+              "Wrong number of arguments, expected %d but got %d",
+              params.length,
+              args.size()
+            ),
+            expr
+          );
+        }
+
+        int checkedArgs = Math.min(params.length, args.size());
+
+        for (int i = 0; i < checkedArgs; ++i) {
+          IType argType = r.get(i + 1);
+          IType paramType = params[i];
+
+          if (!argType.isAssignableFrom(paramType)) {
+            Expression expression = expr.args.get(i);
+            if (expression instanceof Expression.Dict dict && !dict.keys.isEmpty()) {
+              expression = dict.keys.getFirst();
+            } else if (expression instanceof Expression.Array array && !array.items.isEmpty()) {
+              expression = array.items.getFirst();
+            }
+
+            r.errorFor(
+              String.format(
+                "Incompatible argument provided for argument %d. Expected %s but got %s",
+                i, paramType, argType
+              ),
+              expression
+            );
+          }
+        }
+      });
   }
 
   @Override
@@ -417,7 +509,60 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       visitExpression(item);
     }
 
-    // TODO: Implement
+    if (expr.items.isEmpty()) {
+      final AST context = this.inferenceContext;
+
+      if (context instanceof Statement.Var) {
+        R.rule(expr, "type")
+          .using(context, "type")
+          .by(Rule::copyFirst);
+      } else if (context instanceof Expression.Call) {
+        R.rule(expr, "type")
+          .using(((Expression.Call) context).callee.attr("type"), expr.attr("index"))
+          .by(r -> {
+            DefType funType = r.get(0);
+            r.set(0, funType.getParameterTypes()[(int) r.get(1)]);
+          });
+      }
+      return;
+    }
+
+    Attribute[] dependencies =
+      expr.items.stream().map(it -> it.attr("type")).toArray(Attribute[]::new);
+
+    R.rule(expr, "type")
+      .using(dependencies)
+      .by(r -> {
+        IType[] types = IntStream.range(0, dependencies.length).<IType>mapToObj(r::get)
+          .distinct().toArray(IType[]::new);
+
+        IType supertype = null;
+        for (int i = 0; i < types.length; i++) {
+          IType type = types[i];
+
+          if (type == VoidType.INSTANCE) {
+            // We report the error but compute a type for the array from the other elements.
+            r.errorFor("`void` value in array literal.", expr.items.get(i));
+          } else if (type == NilType.INSTANCE) {
+            // We report the error but compute a type for the array from the other elements.
+            r.errorFor("`nil` value in array literal.", expr.items.get(i));
+          } else if (supertype == null) {
+            supertype = type;
+          } else {
+            supertype = getCommonType(supertype, type);
+            if (supertype == null) {
+              r.error("Could not find common type for items in array.", expr);
+              return;
+            }
+          }
+        }
+
+        if (supertype == null) {
+          r.error("Could not find common non-void type for items in array.", expr);
+        } else {
+          r.set(0, new ArrayType(supertype, expr.items.size()));
+        }
+      });
   }
 
   @Override
@@ -425,21 +570,142 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     for (var key : expr.keys) {
       visitExpression(key);
     }
+
+    if (expr.keys.isEmpty()) {
+      final AST context = this.inferenceContext;
+
+      if (context instanceof Statement.Var) {
+        R.rule(expr, "type")
+          .using(context, "type")
+          .by(Rule::copyFirst);
+      } else if (context instanceof Expression.Call) {
+        Integer index = R.get(expr, "index");
+        if (index == null) {
+          R.rule(expr, "type")
+            .by(r -> {
+              r.errorFor("Cannot infer type for sub dictionary literal with no index.", expr);
+              r.set(0, new MappedType(VoidType.INSTANCE, VoidType.INSTANCE));
+            });
+          return;
+        }
+
+        R.rule(expr, "type")
+          .using(((Expression.Call) context).callee.attr("type"), expr.attr("index"))
+          .by(r -> {
+            DefType funType = r.get(0);
+            r.set(0, funType.getParameterTypes()[(int) r.get(1)]);
+          });
+      }
+      return;
+    }
+
     for (var value : expr.values) {
       visitExpression(value);
     }
 
-    // TODO: Implement
+    Attribute[] keyDependencies =
+      expr.keys.stream().map(it -> it.attr("type")).toArray(Attribute[]::new);
+
+    Attribute[] valueDependencies =
+      expr.values.stream().map(it -> it.attr("type")).toArray(Attribute[]::new);
+
+    R.rule()
+      .using(keyDependencies)
+      .by(r -> {
+        IType[] keyTypes = IntStream.range(0, keyDependencies.length).<IType>mapToObj(r::get)
+          .distinct().toArray(IType[]::new);
+
+        IType keyType = null;
+        for (int i = 0; i < keyTypes.length; i++) {
+          IType type = keyTypes[i];
+
+          if (type == VoidType.INSTANCE) {
+            // We report the error but compute a type for the array from the other elements.
+            r.errorFor("`void` key in dictionary literal.", expr.keys.get(i));
+          } else if (type == NilType.INSTANCE) {
+            // We report the error but compute a type for the array from the other elements.
+            r.errorFor("`nil` key in dictionary literal.", expr.keys.get(i));
+          } else if (keyType == null) {
+            keyType = type;
+          } else {
+            keyType = getCommonType(keyType, type);
+            if (keyType == null) {
+              r.error("Could not find common type for dictionary keys.", expr.keys.get(i));
+              return;
+            }
+          }
+        }
+
+        if (keyType == null) {
+          r.error("Could not find common non-void type for items in array.", expr.keys.getFirst());
+        } else {
+
+          final IType sharedKeyType = keyType;
+
+          R.rule(expr, "type")
+            .using(valueDependencies)
+            .by(r1 -> {
+              IType[] valueTypes = IntStream.range(0, valueDependencies.length).<IType>mapToObj(r1::get)
+                .distinct().toArray(IType[]::new);
+
+              IType valueType = null;
+              for (int i = 0; i < valueTypes.length; i++) {
+                IType type = valueTypes[i];
+
+                if (valueType == null) {
+                  valueType = type;
+                } else {
+                  valueType = getCommonType(valueType, type);
+                  if (valueType == null) {
+                    r.error("Could not find common type for dictionary values.", expr.values.get(i));
+                    return;
+                  }
+                }
+              }
+
+              if (valueType == null) {
+                r1.error("Could not find common non-void type for values in dictionary.", expr.values.getFirst());
+              } else {
+                r1.set(0, new MappedType(sharedKeyType, valueType));
+              }
+            });
+        }
+      });
   }
 
   @Override
   public void visitNewExpression(Expression.New expr) {
     visitExpression(expr.expression);
-    for (var argument : expr.arguments) {
-      visitExpression(argument);
-    }
 
-    // TODO: Implement
+    R.rule()
+      .using(expr.expression, "ast")
+      .by(r -> {
+        Statement declaration = r.get(0);
+
+        if (!(declaration instanceof Statement.Class klass)) {
+          String description =
+            "Cannot create instance of non-class type: " + declaration;
+          r.errorFor(description, expr, expr.attr("type"));
+          return;
+        }
+
+        Statement.Method constructor = klass.methods.stream()
+          .filter(m -> m.name.literal().equals("@new"))
+          .findFirst()
+          .orElse(null);
+
+        if (constructor != null) {
+          R.rule(expr, "type")
+            .using(constructor.attr("type"))
+            .by(Rule::copyFirst);
+        } else {
+          R.rule(expr, "type")
+            .using(declaration, "type")
+            .by(r1 -> {
+              r1.set(0, new DefType(r1.get(0)));
+            });
+        }
+      });
   }
 
   @Override
@@ -456,6 +722,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitAssignExpression(Expression.Assign expr) {
+    visitExpression(expr.expression);
     visitExpression(expr.value);
 
     R.rule(expr, "type")
@@ -470,8 +737,8 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (expr.expression instanceof Expression.Identifier
           || expr.expression instanceof Expression.Get
           || expr.expression instanceof Expression.Index) {
-          if (!isAssignableTo(right, left))
-            r.errorFor("Trying to assign a value to a non-compatible lvalue", expr);
+          if (!right.isAssignableTo(left))
+            r.errorFor(String.format("Error assigning a value of type of %s to %s", right.name(), left.name()), expr);
         } else
           r.errorFor("Trying to assign to an non-lvalue expression", expr.expression);
       });
@@ -482,7 +749,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     visitFunctionStatement(expr.function);
 
     R.rule(expr, "type")
-      .using(expr.function.returnType, "value")
+      .using(expr.function, "type")
       .by(Rule::copyFirst);
   }
 
@@ -547,8 +814,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType type = r.get(0);
         if (!TypeUtil.isBoolean(type)) {
-          r.error("While statement with a non-boolean condition of type: " + type,
-            stmt.condition);
+          r.error(
+            "While statement with a non-boolean condition of type: " + type,
+            stmt.condition
+          );
         }
       });
   }
@@ -563,8 +832,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType type = r.get(0);
         if (!TypeUtil.isBoolean(type)) {
-          r.error("Do-While statement with a non-boolean condition of type: " + type,
-            stmt.condition);
+          r.error(
+            "Do-While statement with a non-boolean condition of type: " + type,
+            stmt.condition
+          );
         }
       });
   }
@@ -598,6 +869,8 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     if (function == null) // top-level return
       return;
 
+    boolean isConstructor = function.name.literal().equals("@new");
+
     if (stmt.value == null) {
       R.rule()
         .using(function.returnType, "value")
@@ -610,14 +883,17 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       R.rule()
         .using(function.returnType.attr("value"), stmt.value.attr("type"))
         .by(r -> {
-          IType formal = r.get(0);
+          IType expected = r.get(0);
           IType actual = r.get(1);
 
-          if (formal == VoidType.INSTANCE) {
+          if (expected == VoidType.INSTANCE && !isConstructor) {
             r.error("Return with value in a void function", stmt);
-          } else if (!isAssignableTo(actual, formal)) {
-            r.errorFor(String.format(
-                "Incompatible return type, expected %s but got %s", formal, actual),
+          } else if (isConstructor && expected != VoidType.INSTANCE) {
+            r.error("Cannot return value from constructor", stmt);
+          } else if (!actual.isAssignableTo(expected)) {
+            r.errorFor(
+              String.format(
+                "Incompatible return type, expected %s but got %s", expected, actual),
               stmt.value
             );
           }
@@ -637,7 +913,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         IType expressionType = r.get(0);
         IType messageType = r.get(1);
 
-        if(expressionType != BoolType.INSTANCE) {
+        if (expressionType != BoolType.INSTANCE) {
           r.errorFor("Assert statement with non-boolean expression", stmt.expression);
         } else {
           // TODO: Ensure message is one of String or Error
@@ -672,7 +948,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       visitStatement(statement);
     }
 
-    Scope previousScope = scope;
     scope = new Scope(stmt, scope);
     R.set(stmt, "scope", scope);
 
@@ -681,15 +956,16 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .using(deps)
       .by(r -> r.set(0, deps.length != 0 && Arrays.stream(deps).anyMatch(r::get)));
 
-    scope = previousScope;
+    scope = scope.parent;
   }
 
   @Override
   public void visitVarStatement(Statement.Var stmt) {
+    this.inferenceContext = stmt;
+
     visitExpression(stmt.typedName);
     visitExpression(stmt.value);
 
-    this.inferenceContext = stmt;
     String name = stmt.typedName.name.token.literal();
 
     scope.declare(name, stmt);
@@ -705,7 +981,36 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         IType expected = r.get(0);
         IType actual = r.get(1);
 
-        if (!isAssignableTo(actual, expected)) {
+        if (!actual.isAssignableTo(expected)) {
+
+          if (TypeUtil.isArray(expected) && TypeUtil.isArray(actual)) {
+            IType expectedElem = ((ArrayType) expected).getType();
+            IType actualElem = ((ArrayType) actual).getType();
+
+            if (TypeUtil.isIntegerType(expectedElem) && TypeUtil.isIntegerType(actualElem)) {
+              // TODO: Check this attr in the compiler and perform a casting per-element if necessary.
+              R.rule(stmt, "cast")
+                .by(r1 -> {
+                  r1.set(0, expectedElem);
+                });
+              return;
+            }
+          }
+
+          if (TypeUtil.isMap(expected) && TypeUtil.isMap(actual)) {
+            IType expectedElem = ((MappedType) expected).keyType();
+            IType actualElem = ((MappedType) actual).keyType();
+
+            if (TypeUtil.isIntegerType(expectedElem) && TypeUtil.isIntegerType(actualElem)) {
+              // TODO: Check this attr in the compiler and perform a casting per-element if necessary.
+              R.rule(stmt, "cast-key")
+                .by(r1 -> {
+                  r1.set(0, expectedElem);
+                });
+              return;
+            }
+          }
+
           r.error(
             String.format(
               "Incompatible initializer type provided for variable `%s`: expected %s but got %s",
@@ -714,12 +1019,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             stmt.value
           );
         }
+
+        // TODO: If actual is a list literal, update the type to contain the actual size of the list.
       });
   }
 
-  private void doFunctionVisit(Statement statement, String name, Typed returnType, List<Expression.TypedName> parameters, Statement.Block body, boolean isVariadic) {
+  private void doFunctionVisit(Statement statement, String name, Typed returnType, List<Expression.TypedName> parameters, Statement.Block body, boolean isVariadic, boolean isMethod) {
     scope.declare(name, statement);
-    Scope previousScope = scope;
 
     scope = new Scope(statement, scope);
     R.set(statement, "scope", scope);
@@ -740,11 +1046,21 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType[] paramTypes = new IType[parameters.size()];
 
+        IType rType = r.get(0);
+        if (name.equals("@new") && isMethod) {
+          if (rType != VoidType.INSTANCE) {
+            r.errorFor("Cannot return value from constructor", statement);
+            // continue assigning type
+          } else {
+            rType = R.get(statement, "class");
+          }
+        }
+
         for (int i = 0; i < paramTypes.length; ++i) {
           paramTypes[i] = r.get(i + 1);
         }
 
-        r.set(0, new DefType(r.get(0), isVariadic, paramTypes));
+        r.set(0, new DefType(rType, isVariadic, paramTypes));
       });
 
     visitStatement(body);
@@ -755,13 +1071,17 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         boolean returns = r.get(0);
         IType rType = r.get(1);
         if (!returns && rType != VoidType.INSTANCE) {
-          r.error("Missing return in function", statement);
+          r.error(String.format("Missing return in function. Expecting %s", rType), returnType);
         }
 
         // NOTE: The returned value presence and type are checked in visitReturnStatement().
       });
 
-    scope = previousScope;
+    scope = scope.parent;
+  }
+
+  private void doFunctionVisit(Statement statement, String name, Typed returnType, List<Expression.TypedName> parameters, Statement.Block body, boolean isVariadic) {
+    doFunctionVisit(statement, name, returnType, parameters, body, isVariadic, false);
   }
 
   @Override
@@ -784,7 +1104,8 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       stmt.returnType,
       stmt.parameters,
       stmt.body,
-      stmt.isVariadic
+      stmt.isVariadic,
+      true
     );
   }
 
@@ -797,10 +1118,59 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   @Override
   public void visitClassStatement(Statement.Class stmt) {
 
-    // TODO: Set the "kind" info (regular, parameterized, mapped) on the statement itself once supported in the parser.
-    scope.declare(stmt.descriptor.name.literal(), stmt);
-    R.set(stmt, "type", TypeType.INSTANCE);
-    R.set(stmt, "declared", new ClassType(stmt));
+    scope.declare(stmt.name.literal(), stmt);
+
+    if (stmt.superclass != null) {
+      String superClassName = stmt.superclass.token.literal();
+      DeclarationContext ctx = scope.lookup(superClassName);
+      AST ast = ctx == null ? null : ctx.declaration();
+
+      if (ctx == null) {
+        R.rule()
+          .by(r -> r.errorFor(
+            String.format("Cannot resolve class '%s'", superClassName),
+            stmt.superclass,
+            stmt.superclass.attr("value")
+          ));
+      } else if (!isTypeDeclaration(ast)) {
+        R.rule()
+          .by(r -> r.errorFor(
+            String.format(
+              "%s did not resolve to a class declaration but to a %s",
+              superClassName, ast.astName()
+            ),
+            stmt.superclass,
+            stmt.superclass.attr("value")
+          ));
+      }
+
+      IType superClass = R.get(ast, "declared");
+
+      ClassType rClass;
+      if (!(superClass instanceof ClassType classType)) {
+        rClass = new ClassType(stmt);
+      } else {
+        rClass = new ClassType(stmt, classType);
+      }
+
+      R.set(stmt, "type", TypeType.INSTANCE);
+      R.set(stmt, "declared", rClass);
+
+      for (Statement.Method method : stmt.methods) {
+        R.set(method, "class", rClass);
+        visitMethodStatement(method);
+      }
+    } else {
+      ClassType rClass = new ClassType(stmt);
+
+      R.set(stmt, "type", TypeType.INSTANCE);
+      R.set(stmt, "declared", rClass);
+
+      for (Statement.Method method : stmt.methods) {
+        R.set(method, "class", rClass);
+        visitMethodStatement(method);
+      }
+    }
   }
 
   @Override
@@ -817,8 +1187,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   }
 
   @Override
+  public void visitVoidTyped(Typed.Void typed) {
+    R.set(typed, "value", VoidType.INSTANCE);
+  }
+
+  @Override
   public void visitIdTyped(Typed.Id typed) {
-    final String name = typed.name;
+    final String name = typed.name.token.literal();
 
     R.rule()
       .by(r -> {
@@ -851,77 +1226,18 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitArrayTyped(Typed.Array typed) {
-    DeclarationContext ctx = scope.lookup(typed.name);
-    AST ast = ctx == null ? null : ctx.declaration();
+    visitTyped(typed.type);
 
-    R.rule()
+    R.rule(typed, "value")
+      .using(typed.type, "value")
       .by(r -> {
-        if (ctx == null) {
-          r.errorFor(
-            String.format("Cannot resolve type '%s'", typed.name),
-            typed,
-            typed.attr("value")
-          );
-        } else if (!isTypeDeclaration(ast)) {
-          r.errorFor(
-            String.format(
-              "%s did not resolve to a type declaration but to a %s declaration",
-              typed.name, ast.astName()
-            ),
-            typed,
-            typed.attr("value")
-          );
-        } else {
-          R.rule(typed, "value")
-            .using(ast, "declared")
-            .by(r1 -> {
-              r1.set(0, new ArrayType(r1.get(0)));
-            });
-        }
-      });
-  }
+        IType type = r.get(0);
 
-  @Override
-  public void visitParameterizedTyped(Typed.Parameterized typed) {
-    visitTyped(typed.innerType);
-
-    String name = typed.name;
-    DeclarationContext ctx = scope.lookup(name);
-    AST ast = ctx == null ? null : ctx.declaration();
-
-    R.rule()
-      .by(r -> {
-
-        if (ctx == null) {
-          r.errorFor(
-            String.format("Cannot resolve type '%s'", name),
-            typed,
-            typed.attr("value")
-          );
-          return;
+        if (type == VoidType.INSTANCE) {
+          r.errorFor("Arrays cannot be of void type", typed.type);
         }
 
-        R.rule(typed, "value")
-          .using(ast.attr("declared"), typed.innerType.attr("value"))
-          .by(r1 -> {
-
-            IType astType = r1.get(0);
-            IType innerType = r1.get(1);
-
-            // TODO: Correctly check that the astType is actually a type that can hold a parameter.
-            if (!isTypeDeclaration(ast)/* || !(astType instanceof ParameterizedType)*/) {
-              r1.errorFor(
-                String.format(
-                  "Expected a parameterized type but got %s",
-                  name
-                ),
-                typed,
-                typed.attr("value")
-              );
-            } else {
-              r1.set(0, new ParameterizedType(astType, innerType));
-            }
-          });
+        r.set(0, new ArrayType(type));
       });
   }
 
@@ -930,41 +1246,17 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     visitTyped(typed.keyType);
     visitTyped(typed.valueType);
 
-    String name = typed.name;
-    DeclarationContext ctx = scope.lookup(name);
-    AST ast = ctx == null ? null : ctx.declaration();
-
-    R.rule()
+    R.rule(typed, "value")
+      .using(typed.keyType.attr("value"), typed.valueType.attr("value"))
       .by(r -> {
-        if (ctx == null) {
-          r.errorFor(
-            String.format("Cannot resolve type '%s'", name),
-            typed,
-            typed.attr("value")
-          );
-        } else {
-          R.rule(typed, "value")
-            .using(ast.attr("declared"), typed.keyType.attr("value"), typed.valueType.attr("value"))
-            .by(r1 -> {
-              IType astType = r1.get(0);
-              IType keyType = r1.get(1);
-              IType valueType = r1.get(2);
+        IType keyType = r.get(0);
+        IType valueType = r.get(1);
 
-              // TODO: Correctly check that the astType is actually a type that can hold a map.
-              if (!isTypeDeclaration(ast) /*|| !(astType instanceof MappedType)*/) {
-                r.errorFor(
-                  String.format(
-                    "Expected a parameterized type but got %s",
-                    name
-                  ),
-                  typed,
-                  typed.attr("value")
-                );
-              } else {
-                r1.set(0, new MappedType(astType, keyType, valueType));
-              }
-            });
+        if (keyType == VoidType.INSTANCE || valueType == VoidType.INSTANCE) {
+          r.errorFor("Map type cannot have void key or value type", typed);
         }
+
+        r.set(0, new MappedType(keyType, valueType));
       });
   }
 

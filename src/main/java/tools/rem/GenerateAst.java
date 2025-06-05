@@ -35,10 +35,10 @@ public class GenerateAst {
   }
 
   private static final List<String> TYPE_DEFINITION = Arrays.asList(
-    "Id               : String name",
-    "Array            : String name",
-    "Parameterized    : String name, Typed innerType",
-    "Map              : String name, Typed keyType, Typed valueType"
+    "Void             :",
+    "Id               : Expression.Identifier name",
+    "Array            : Typed type",
+    "Map              : Typed keyType, Typed valueType"
   );
 
   private static final List<String> EXPR_DEFINITION = Arrays.asList(
@@ -65,7 +65,7 @@ public class GenerateAst {
     "Slice              : Expression callee, Expression lower, Expression upper",
     "Array              : List<Expression> items",
     "Dict               : List<Expression> keys, List<Expression> values",
-    "New                : Expression expression, List<Expression> arguments",
+    "New                : Expression expression",
     "Parent             :",
     "Self               :",
     "Assign             : Expression expression, Expression value",
@@ -92,7 +92,7 @@ public class GenerateAst {
     "Function   : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic",
     "Method     : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic, boolean isStatic",
     "Property   : Expression.TypedName name, Expression value, boolean isStatic, boolean isConstant",
-    "Class      : ClassDescriptor descriptor, List<Property> properties, List<Method> methods, List<Method> operators",
+    "Class      : Token name, Expression.Identifier superclass, List<Property> properties, List<Method> methods, List<Method> operators",
     "VarList    : List<Statement> declarations"
   );
 
