@@ -5,6 +5,7 @@ import norswap.uranium.Reactor;
 import norswap.uranium.Rule;
 import org.rem.enums.DeclarationKind;
 import org.rem.interfaces.IType;
+import org.rem.parser.TokenType;
 import org.rem.parser.ast.*;
 import org.rem.scope.DeclarationContext;
 import org.rem.scope.RootScope;
@@ -133,13 +134,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
     switch (expr.op.type()) {
       case TILDE: {
-        R.rule()
+        R.rule(expr, "type")
           .using(expr.right, "type")
           .by(r -> {
             IType opType = r.get(0);
 
             // carry the type of the right expression
-            R.set(expr, "type", opType);
+            r.set(0, opType);
 
             if (!TypeUtil.isIntegerType(opType))
               r.error(
@@ -150,13 +151,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         break;
       }
       case MINUS: {
-        R.rule()
+        R.rule(expr, "type")
           .using(expr.right, "type")
           .by(r -> {
             IType opType = r.get(0);
 
             // carry the type of the right expression
-            R.set(expr, "type", opType);
+            r.set(0, opType);
 
             if (!TypeUtil.isNumericType(opType))
               r.error(String.format("Invalid operation '%s' on value of type %s", expr.op.literal(), opType), expr);
@@ -194,8 +195,66 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         // TODO: Handle string concatenation
 
         if (expr.op.isArithemetic()) {
+
           if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
-            r.set(0, TypeUtil.max(left, right));
+            if(expr.op.type() == TokenType.DIVIDE) {
+              if(TypeUtil.isIntegerType(left)) {
+                left = F32Type.INSTANCE;
+
+                IType finalLeft = left;
+                R.rule(expr.left, "cast")
+                  .using(expr.left, "type")
+                  .by(r1 -> r1.set(0, finalLeft));
+              }
+
+              if(TypeUtil.isIntegerType(right)) {
+                right = F32Type.INSTANCE;
+
+                IType finalRight = right;
+                R.rule(expr.right, "cast")
+                  .using(expr.right, "type")
+                  .by(r1 -> r1.set(0, finalRight));
+              }
+            } else if(expr.op.type() == TokenType.FLOOR) {
+              if(TypeUtil.isFloatType(left)) {
+                left = I32Type.INSTANCE;
+
+                IType finalLeft = left;
+                R.rule(expr.left, "cast")
+                  .using(expr.left, "type")
+                  .by(r1 -> r1.set(0, finalLeft));
+              }
+
+              if(TypeUtil.isFloatType(right)) {
+                right = I32Type.INSTANCE;
+
+                IType finalRight = right;
+                R.rule(expr.right, "cast")
+                  .using(expr.right, "type")
+                  .by(r1 -> r1.set(0, finalRight));
+              }
+            }
+
+            final var maxType = TypeUtil.max(left, right);
+
+            if(left.lessOrGreater(maxType)) {
+//              left = maxType;
+
+              R.rule(expr.left, "cast")
+                .using(expr.left, "type")
+                .by(r1 -> r1.set(0, maxType));
+            }
+
+            if(right.lessOrGreater(maxType)) {
+//              right = maxType;
+
+              R.rule(expr.right, "cast")
+                .using(expr.right, "type")
+                .by(r1 -> r1.set(0, maxType));
+            }
+
+//            System.out.println("OP = "+expr.op.literal()+", Left: "+left+", Right: "+right+", Max: "+maxType);
+            r.set(0, maxType);
           } else {
             r.error(arithmeticError(expr, left, right), expr);
           }
@@ -1034,6 +1093,14 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
                   "Incompatible return type, expected %s but got %s", expected, actual),
                 stmt.value
               );
+            } else {
+
+              // ensure that proper value is returned
+              if(actual != expected) {
+                R.rule(stmt, "cast")
+                  .using(method.returnType, "value")
+                  .by(Rule::copyFirst);
+              }
             }
           });
       }
@@ -1065,6 +1132,14 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
                   "Incompatible return type, expected %s but got %s", expected, actual),
                 stmt.value
               );
+            } else {
+
+              // ensure that proper value is returned
+              if(actual != expected) {
+                R.rule(stmt, "cast")
+                  .using(function.returnType, "value")
+                  .by(Rule::copyFirst);
+              }
             }
           });
       }

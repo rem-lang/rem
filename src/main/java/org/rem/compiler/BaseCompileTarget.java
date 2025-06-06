@@ -1,11 +1,18 @@
 package org.rem.compiler;
 
+import norswap.uranium.Reactor;
 import org.rem.interfaces.ICompileTarget;
 import org.rem.parser.ast.Expression;
 import org.rem.parser.ast.Statement;
 import org.rem.parser.ast.Typed;
 
-public class BaseCompileTarget<T> implements ICompileTarget<T> {
+public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
+  protected Reactor R;
+
+  public BaseCompileTarget(Reactor reactor) {
+    this.R = reactor;
+  }
+
   @Override
   public T visitNilExpression(Expression.Nil expr) {
     return null;

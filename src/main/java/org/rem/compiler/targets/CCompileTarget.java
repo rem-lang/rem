@@ -1,11 +1,18 @@
 package org.rem.compiler.targets;
 
+import norswap.uranium.Reactor;
 import org.rem.compiler.BaseCompileTarget;
+import org.rem.generators.CGenerator;
+import org.rem.interfaces.IGenerator;
 import org.rem.interfaces.IType;
 import org.rem.nodes.Node;
 import org.rem.types.DefType;
 
 public class CCompileTarget extends BaseCompileTarget<Node> {
+  public CCompileTarget(Reactor reactor) {
+    super(reactor);
+  }
+
   private String cType(IType type, String name) {
     return switch (type.type()) {
       case BOOL -> "bool";
@@ -48,5 +55,10 @@ public class CCompileTarget extends BaseCompileTarget<Node> {
 
   private String cType(IType type) {
     return cType(type, "");
+  }
+
+  @Override
+  public IGenerator<Node> getGenerator() {
+    return new CGenerator();
   }
 }

@@ -44,13 +44,11 @@ public class Compiler {
     }
 
     return CompilerRegistry
-      .getCompiler(request.compileTarget)
+      .get(request.compileTarget, reactor)
       .compile(parseResult);
   }
 
-  public int generate(CompileResult<?> result) {
-    return GeneratorRegistry
-      .get(request.compileTarget)
-      .generate(result);
+  public  <T> int generate(CompileResult<T> result) {
+    return result.getTarget().getGenerator().generate(result);
   }
 }

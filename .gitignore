@@ -41,3 +41,6 @@ bin/
 ### Mac OS ###
 .DS_Store
 .profileconfig.json
+*.log
+*.o
+result

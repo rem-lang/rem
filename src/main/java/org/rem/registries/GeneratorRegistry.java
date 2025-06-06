@@ -7,18 +7,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class GeneratorRegistry {
-  private static final Map<String, IGenerator> generators = new HashMap<>() {
-    @Override
-    public IGenerator get(Object key) {
-      return switch (key.toString().toLowerCase()) {
-        case "c" -> new CGenerator();
-        case "js" -> new JSGenerator();
-        default -> new LLVMGenerator();
-      };
-    }
-  };
-
-  public static IGenerator get(String name) {
-    return generators.get(name);
+  public static <T> IGenerator<?> get(Object key, T result) {
+    return switch (key.toString().toLowerCase()) {
+      case "c" -> new CGenerator();
+      case "js" -> new JSGenerator();
+      default -> new LLVMGenerator();
+    };
   }
 }

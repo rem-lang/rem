@@ -2,20 +2,28 @@ package org.rem.utils;
 
 import org.rem.enums.TypeEnum;
 import org.rem.interfaces.IType;
+import org.rem.types.F128Type;
+import org.rem.types.F32Type;
+import org.rem.types.I128Type;
+import org.rem.types.I8Type;
 
 public class TypeUtil {
   public static IType max(IType a, IType b) {
-    return a.type().compareTo(b.type()) > 0 ? a : b;
+    return a.greaterOrEqual(b) ? a : b;
   }
 
   public static boolean isIntegerType(IType type) {
-    return type.type().compareTo(TypeEnum.I8) >= 0 &&
-      type.type().compareTo(TypeEnum.I128) <= 0;
+    return type.greaterOrEqual(I8Type.INSTANCE) && type.lessOrEqual(I128Type.INSTANCE);
+  }
+
+  public static boolean isFloatType(IType type) {
+    return type.greaterOrEqual(F32Type.INSTANCE) &&
+      type.lessOrEqual(F128Type.INSTANCE);
   }
 
   public static boolean isNumericType(IType type) {
-    return type.type().compareTo(TypeEnum.I8) >= 0 &&
-      type.type().compareTo(TypeEnum.F128) <= 0;
+    return type.greaterOrEqual(I8Type.INSTANCE) &&
+      type.lessOrEqual(F128Type.INSTANCE);
   }
 
   public static boolean isNil(IType type) {

@@ -28,6 +28,8 @@ public interface ICompileTarget<T> extends IBaseVisitor<T>, Typed.Visitor<T> {
       }
     }
 
-    return new CompileResult<>(nodes);
+    return new CompileResult<>(this, nodes);
   }
+
+  IGenerator<T> getGenerator();
 }

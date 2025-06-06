@@ -1,7 +1,6 @@
 package org.rem.enums;
 
 public enum TypeEnum {
-  ERROR,
   VOID,
   NIL,
   BOOL,
