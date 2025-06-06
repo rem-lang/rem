@@ -49,13 +49,13 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
       LLVMSetDataLayout(llvmTarget.getModule(), datalayoutStr);
       LLVMDisposeMessage(datalayoutStr);
 
-      LLVMTargetMachineEmitToFile(machine, llvmTarget.getModule(), "result.o", LLVMObjectFile, error);
+      LLVMTargetMachineEmitToFile(machine, llvmTarget.getModule(), "build/result.o", LLVMObjectFile, error);
       if(!error.isNull()) {
         System.err.printf("error: %s\n", error);
       }
       LLVMDisposeMessage(error);
 
-      return linkToExe("result.o", "result");
+      return linkToExe("build/result.o", "build/result");
 
     }
     return 0;
@@ -70,7 +70,8 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
 
     try {
       for(var linker : LINKERS) {
-        var process = Runtime.getRuntime().exec(new String[]{linker, inputPath, "-o", ouputPath});
+        // TODO: Verify that -w works for other linkers apart from clang
+        var process = Runtime.getRuntime().exec(new String[]{linker, inputPath, "-o", ouputPath, "-w"});
 
         String out;
         try (var inputReader = process.inputReader()) {

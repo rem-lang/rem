@@ -9,6 +9,8 @@ import org.rem.types.I8Type;
 
 public class TypeUtil {
   public static IType max(IType a, IType b) {
+    if(a == null) return b;
+    if(b == null) return a;
     return a.greaterOrEqual(b) ? a : b;
   }
 

@@ -7,8 +7,10 @@ import org.rem.compiler.BaseCompileTarget;
 import org.rem.generators.LLVMGenerator;
 import org.rem.interfaces.IGenerator;
 import org.rem.interfaces.IType;
+import org.rem.parser.TokenType;
 import org.rem.parser.ast.Expression;
 import org.rem.parser.ast.Statement;
+import org.rem.scope.Environment;
 import org.rem.types.*;
 import org.rem.utils.TypeUtil;
 
@@ -17,9 +19,12 @@ import static org.bytedeco.llvm.global.LLVM.*;
 @SuppressWarnings("resource")
 public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   private final LLVMContextRef context;
-  private LLVMBuilderRef builder = LLVMCreateBuilder();
   private final LLVMModuleRef module;
+  private LLVMBuilderRef builder = LLVMCreateBuilder();
   private LLVMBasicBlockRef currentBlock;
+  private LLVMValueRef currentFunction;
+  private Environment<String, LLVMValueRef> env = new Environment<>(null);
+  private Environment<LLVMValueRef, LLVMTypeRef> functionTypeRegistry = new Environment<>(null);
 
   public LLVMCompileTarget(Reactor reactor) {
     super(reactor);
@@ -57,8 +62,8 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
         IType[] parameters = defType.getParameterTypes();
         IType returnType = defType.getReturnType();
 
-        try(PointerPointer<LLVMTypeRef> paramsPointer = new PointerPointer<>()) {
-          for(IType param : parameters) {
+        try (PointerPointer<LLVMTypeRef> paramsPointer = new PointerPointer<>()) {
+          for (IType param : parameters) {
             paramsPointer.put(llvmType(context, param));
           }
 
@@ -121,14 +126,20 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitUnaryExpression(Expression.Unary expr) {
-    var type = getType(expr);
-    var value = LLVMBuildBitCast(builder, visitExpression(expr.right), type, "");
+    var iType = getIType(expr);
+
+    var value = LLVMBuildBitCast(builder, visitExpression(expr.right), getType(expr), "");
 
     return switch (expr.op.type()) {
-      case MINUS -> LLVMBuildNeg(builder, value, "");
+      case MINUS -> {
+        if (TypeUtil.isFloatType(iType)) {
+          yield LLVMBuildFNeg(builder, value, "fneg");
+        }
+        yield LLVMBuildNeg(builder, value, "neg");
+      }
       // TODO: Fix for correctness.
-      case BANG -> LLVMBuildNot(builder, value, "");
-      default -> LLVMBuildNot(builder, value, "");
+      case BANG -> LLVMBuildNot(builder, value, "not");
+      default -> LLVMBuildNot(builder, value, "bnot");
     };
   }
 
@@ -140,53 +151,39 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     var lValue = visitExpression(expr.left);
     var rValue = visitExpression(expr.right);
 
-    IType lCastType = R.get(expr.left, "cast");
-//    System.out.println("E: "+expr.op.literal()+", LC: "+lCastType+", L:"+l_IType);
-    if(lCastType != null && lCastType != l_IType) {
-      lValue = TypeUtil.isIntegerType(l_IType)
-        ? LLVMBuildSIToFP(builder, lValue, llvmType(lCastType), "")
-        : LLVMBuildFPToSI(builder, lValue, llvmType(lCastType), "");
+    IType lCastType = TypeUtil.max(r_IType, R.get(expr.left, "cast"));
+    IType rCastType = TypeUtil.max(R.get(expr.right, "cast"), lCastType);
+
+    // TODO: Handle string concatenation and multiplication
+    // TODO: Handle array multiplication
+
+    var maxType = TypeUtil.max(lCastType, rCastType);
+
+    if (lCastType != null && maxType != l_IType) {
+      lValue = castNumberToType(lValue, l_IType, maxType);
     }
 
-    IType rCastType = R.get(expr.right, "cast");
-//    System.out.println("E: "+expr.op.literal()+", RC: "+rCastType+", R:"+r_IType);
-    if(rCastType != null && rCastType != r_IType) {
-      rValue = TypeUtil.isIntegerType(l_IType)
-        ? LLVMBuildSIToFP(builder, rValue, llvmType(rCastType), "")
-        : LLVMBuildFPToSI(builder, rValue, llvmType(rCastType), "");
+    if (rCastType != null && maxType != r_IType) {
+      rValue = castNumberToType(rValue, r_IType, maxType);
     }
-
-    var maxType = TypeUtil.max(l_IType, r_IType);
-
-    /*if(l_IType.lessOrGreater(maxType)) {
-      lValue = TypeUtil.isFloatType(maxType)
-        ? LLVMBuildFPCast(builder, lValue, llvmType(maxType), "")
-        : LLVMBuildIntCast(builder, lValue, llvmType(maxType), "");
-    }
-
-    if(r_IType.lessOrGreater(maxType)) {
-      rValue = TypeUtil.isFloatType(maxType)
-        ? LLVMBuildFPCast(builder, rValue, llvmType(maxType), "")
-        : LLVMBuildIntCast(builder, rValue, llvmType(maxType), "");
-    }*/
 
     return switch (expr.op.type()) {
       case PLUS -> {
-        if(TypeUtil.isFloatType(maxType)) {
+        if (TypeUtil.isFloatType(maxType)) {
           yield LLVMBuildFAdd(builder, lValue, rValue, "");
         }
 
         yield LLVMBuildAdd(builder, lValue, rValue, "");
       }
       case MINUS -> {
-        if(TypeUtil.isFloatType(maxType)) {
+        if (TypeUtil.isFloatType(maxType)) {
           yield LLVMBuildFSub(builder, lValue, rValue, "");
         }
 
         yield LLVMBuildSub(builder, lValue, rValue, "");
       }
       case MULTIPLY -> {
-        if(TypeUtil.isFloatType(maxType)) {
+        if (TypeUtil.isFloatType(maxType)) {
           yield LLVMBuildFMul(builder, lValue, rValue, "");
         }
 
@@ -194,7 +191,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
       }
       case DIVIDE -> LLVMBuildFDiv(builder, lValue, rValue, "");
       case FLOOR -> {
-        if(TypeUtil.isFloatType(maxType)) {
+        if (TypeUtil.isFloatType(maxType)) {
           yield LLVMBuildUDiv(builder, lValue, rValue, "");
         }
 
@@ -204,9 +201,141 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     };
   }
 
+  private LLVMValueRef visitLogicalAndOr(Expression.Logical expr) {
+    var l_IType = getIType(expr.left);
+    var r_IType = getIType(expr.right);
+    var op = expr.op.type();
+
+    assert TypeUtil.isBoolean(l_IType) && TypeUtil.isBoolean(r_IType);
+    var lValue = visitExpression(expr.left);
+
+    var lhsEndBlock = currentBlockIsInUse();
+    var resultOnSkip = LLVMConstInt(llvmType(BoolType.INSTANCE), op == TokenType.AND ? 0 : 1, 0);
+
+    if (lhsEndBlock == null) {
+      return resultOnSkip;
+    }
+
+    var phiBlock = LLVMCreateBasicBlockInContext(context, op == TokenType.AND ? "and.phi" : "or.phi");
+    var rhsBlock = LLVMCreateBasicBlockInContext(context, op == TokenType.AND ? "and.rhs" : "or.rhs");
+
+    if (op == TokenType.AND) {
+      LLVMBuildCondBr(builder, lValue, rhsBlock, phiBlock);
+    } else {
+      LLVMBuildCondBr(builder, lValue, phiBlock, rhsBlock);
+    }
+
+    emitBlock(rhsBlock);
+    var rValue = visitExpression(expr.right);
+    var rhsEndBlock = currentBlockIsInUse();
+
+    if (rhsEndBlock != null) {
+      LLVMBuildBr(builder, phiBlock);
+    }
+
+    emitBlock(phiBlock);
+
+    if (rhsEndBlock == null) {
+      return resultOnSkip;
+    }
+
+    return buildPhi(resultOnSkip, lhsEndBlock, rValue, rhsEndBlock);
+  }
+
+  @Override
+  public LLVMValueRef visitLogicalExpression(Expression.Logical expr) {
+    if (expr.op.type() == TokenType.OR || expr.op.type() == TokenType.AND) {
+      return visitLogicalAndOr(expr);
+    }
+
+    var l_IType = getIType(expr.left);
+    var r_IType = getIType(expr.right);
+
+    var lValue = visitExpression(expr.left);
+    var rValue = visitExpression(expr.right);
+
+    // TODO: Handle other types equality and non-equality.
+
+    var maxType = TypeUtil.max(l_IType, r_IType);
+    if (maxType != l_IType) {
+      lValue = castNumberToType(lValue, l_IType, maxType);
+    }
+
+    if (maxType != r_IType) {
+      rValue = castNumberToType(rValue, r_IType, maxType);
+    }
+
+    LLVMValueRef ref;
+    if (TypeUtil.isFloatType(maxType)) {
+      ref = switch (expr.op.type()) {
+        case LESS -> LLVMBuildFCmp(builder, LLVMRealOLT, lValue, rValue, "");
+        case LESS_EQ -> LLVMBuildFCmp(builder, LLVMRealOLE, lValue, rValue, "");
+        case GREATER -> LLVMBuildFCmp(builder, LLVMRealOGT, lValue, rValue, "");
+        case GREATER_EQ -> LLVMBuildFCmp(builder, LLVMRealOGE, lValue, rValue, "");
+        case BANG_EQ -> LLVMBuildFCmp(builder, LLVMRealONE, lValue, rValue, "");
+        case AND -> LLVMBuildAnd(builder, lValue, rValue, "");
+        case OR -> LLVMBuildOr(builder, lValue, rValue, "");
+        default -> LLVMBuildFCmp(builder, LLVMRealOEQ, lValue, rValue, "");
+      };
+    } else {
+      ref = switch (expr.op.type()) {
+        case LESS -> LLVMBuildICmp(builder, LLVMIntSLT, lValue, rValue, "");
+        case LESS_EQ -> LLVMBuildICmp(builder, LLVMIntSLE, lValue, rValue, "");
+        case GREATER -> LLVMBuildICmp(builder, LLVMIntSGT, lValue, rValue, "");
+        case GREATER_EQ -> LLVMBuildICmp(builder, LLVMIntSGE, lValue, rValue, "");
+        case BANG_EQ -> LLVMBuildICmp(builder, LLVMIntNE, lValue, rValue, "");
+        case AND -> LLVMBuildAnd(builder, lValue, rValue, "");
+        case OR -> LLVMBuildOr(builder, lValue, rValue, "");
+        default -> LLVMBuildICmp(builder, LLVMIntEQ, lValue, rValue, "");
+      };
+    }
+
+    return LLVMBuildIntCast(builder, ref, llvmType(BoolType.INSTANCE), "");
+  }
+
   @Override
   public LLVMValueRef visitGroupingExpression(Expression.Grouping expr) {
     return visitExpression(expr.expression);
+  }
+
+  @Override
+  public LLVMValueRef visitIdentifierExpression(Expression.Identifier expr) {
+    var value = env.get(expr.token.literal());
+    if (value == null) {
+      throw new RuntimeException("We should never get here.");
+    }
+    return value;
+  }
+
+  @Override
+  public LLVMValueRef visitCallExpression(Expression.Call expr) {
+    var callee = visitExpression(expr.callee);
+    if (callee == null)
+      throw new RuntimeException("Something went wrong!");
+
+    DefType type = R.get(expr.callee, "type");
+    if (type.getParameterCount() != expr.args.size()) {
+      throw new RuntimeException("Should not end up here!");
+    }
+
+    IType returnType = R.get(expr, "type");
+
+    var values = new PointerPointer<LLVMValueRef>(expr.args.size());
+    for (int i = 0; i < expr.args.size(); i++) {
+      var arg = expr.args.get(i);
+      var argument = visitExpression(arg);
+
+      IType rCastType = R.get(arg, "cast");
+      if (rCastType != null && getIType(arg) == rCastType) {
+        argument = LLVMBuildPointerCast(builder, argument, llvmType(rCastType), "");
+      }
+
+      values.put(i, argument);
+    }
+
+    return LLVMBuildCall2(builder, functionTypeRegistry.get(callee), callee, values, expr.args.size(), "");
+
+//    return super.visitCallExpression(expr);
   }
 
   @Override
@@ -216,7 +345,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitBlockStatement(Statement.Block stmt) {
-    for(var statement : stmt.body) {
+    for (var statement : stmt.body) {
       visitStatement(statement);
     }
 
@@ -224,14 +353,93 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   @Override
+  public LLVMValueRef visitIfStatement(Statement.If stmt) {
+
+    IType cType = R.get(stmt.condition, "type");
+    assert TypeUtil.isBoolean(cType);
+
+    LLVMValueRef condition = LLVMBuildICmp(
+      builder, LLVMIntEQ, visitExpression(stmt.condition),
+      LLVMConstInt(llvmType(cType), 0, 0),
+      "if.cond"
+    );
+
+    if (condition == null) return null;
+
+    var exitBlock = LLVMCreateBasicBlockInContext(context, "if.exit");
+    var thenBlock = exitBlock;
+    var elseBlock = exitBlock;
+
+    if (stmt.thenBranch != null) {
+      thenBlock = LLVMCreateBasicBlockInContext(context, "if.then");
+    }
+
+    if (stmt.elseBranch != null) {
+      elseBlock = LLVMCreateBasicBlockInContext(context, "if.else");
+    }
+
+    boolean exitInUse = true;
+
+    if (LLVMIsAConstantInt(condition) != null && thenBlock != elseBlock) {
+      if (LLVMConstIntGetZExtValue(condition) != 0) {
+        LLVMBuildBr(builder, thenBlock);
+        elseBlock = exitBlock;
+      } else {
+        LLVMBuildBr(builder, elseBlock);
+        thenBlock = exitBlock;
+      }
+    } else {
+      if (thenBlock != elseBlock) {
+        LLVMBuildCondBr(builder, condition, thenBlock, elseBlock);
+      } else {
+        exitInUse = LLVMGetFirstUse(LLVMBasicBlockAsValue(exitBlock)) != null;
+        if (exitInUse) {
+          LLVMBuildBr(builder, exitBlock);
+        }
+      }
+    }
+
+    if (thenBlock != exitBlock) {
+      var previousBlock = currentBlock;
+      emitBlock(thenBlock);
+
+      visitStatement(stmt.thenBranch);
+
+      if (LLVMGetBasicBlockTerminator(currentBlock) == null) {
+        LLVMBuildBr(builder, exitBlock);
+      }
+
+      currentBlock = previousBlock;
+    }
+
+    if (elseBlock != exitBlock) {
+      var previousBlock = currentBlock;
+      emitBlock(elseBlock);
+
+      visitStatement(stmt.elseBranch);
+
+      if (LLVMGetBasicBlockTerminator(currentBlock) == null) {
+        LLVMBuildBr(builder, exitBlock);
+      }
+
+      currentBlock = previousBlock;
+    }
+
+    if (exitInUse) {
+      emitBlock(exitBlock);
+    }
+    return super.visitIfStatement(stmt);
+  }
+
+  @Override
   public LLVMValueRef visitReturnStatement(Statement.Return stmt) {
-    if(stmt.value != null) {
+    if (stmt.value != null) {
       var value = visitExpression(stmt.value);
       IType type = R.get(stmt, "type");
 
       IType lCastType = R.get(stmt, "cast");
 //      System.out.println("CAST = "+lCastType);
-      if(lCastType != null && lCastType != type) {
+      if (lCastType != null && lCastType != type) {
         value = LLVMBuildBitCast(builder, value, llvmType(lCastType), "");
       }
 
@@ -248,7 +456,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
     var returnType = getTypeValue(stmt.returnType);
 
-    var paramTypes = new PointerPointer();
+    var paramTypes = new PointerPointer<LLVMTypeRef>(stmt.parameters.size());
     for (int i = 0; i < stmt.parameters.size(); i++) {
       var param = stmt.parameters.get(i);
       paramTypes.put(i, getType(param));
@@ -257,18 +465,116 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     var functionType = LLVMFunctionType(returnType, paramTypes, stmt.parameters.size(), stmt.isVariadic ? 1 : 0);
     var function = LLVMAddFunction(module, stmt.name.literal(), functionType);
 
+    env = new Environment<>(env);
+    functionTypeRegistry = new Environment<>(functionTypeRegistry);
+    currentFunction = function;
+
+    if (stmt.name.literal().startsWith("_")) {
+      LLVMSetLinkage(function, LLVMInternalLinkage);
+    } else {
+      LLVMSetLinkage(function, LLVMExternalLinkage);
+    }
+
+    // define the function in the parent environment
+    env.getParent().put(stmt.name.literal(), function);
+    functionTypeRegistry.getParent().put(function, functionType);
+
+    for (int i = 0; i < stmt.parameters.size(); i++) {
+      String name = stmt.parameters.get(i).name.token.literal();
+
+      var param = LLVMGetParam(function, i);
+      LLVMSetValueName2(param, name, name.length());
+      env.put(name, param);
+    }
+
     currentBlock = LLVMAppendBasicBlockInContext(context, function, "entry");
     builder = LLVMCreateBuilderInContext(context);
     LLVMPositionBuilderAtEnd(builder, currentBlock);
 
     visitStatement(stmt.body);
 
-    LLVMVerifyFunction(function, LLVMPrintMessageAction);
+    if (LLVMVerifyFunction(function, LLVMPrintMessageAction) != 0) {
+      LLVMInstructionEraseFromParent(function);
+      return null;
+    }
 
     currentBlock = previousBlock;
     builder = previousBuilder;
+    env = env.getParent();
+    currentFunction = null;
+    functionTypeRegistry = functionTypeRegistry.getParent();
 
     return function;
+  }
+
+  private LLVMValueRef castNumberToType(LLVMValueRef value, IType currentType, IType targetType) {
+    return TypeUtil.isIntegerType(currentType)
+      ? LLVMBuildSIToFP(builder, value, llvmType(targetType), "")
+      : LLVMBuildFPToSI(builder, value, llvmType(targetType), "");
+  }
+
+  private void emitBlock(LLVMBasicBlockRef block) {
+    LLVMAppendExistingBasicBlock(currentFunction, block);
+    LLVMPositionBuilderAtEnd(builder, block);
+    currentBlock = block;
+  }
+
+  private boolean blockIsUnused(LLVMBasicBlockRef block) {
+    return LLVMGetFirstInstruction(block) == null
+      && LLVMGetFirstUse(LLVMBasicBlockAsValue(block)) == null;
+  }
+
+  private LLVMBasicBlockRef currentBlockIsInUse() {
+    if (currentBlock != null && blockIsUnused(currentBlock)) {
+      LLVMDeleteBasicBlock(currentBlock);
+      return currentBlock = null;
+    }
+
+    return currentBlock;
+  }
+
+  private LLVMValueRef buildPhi(LLVMValueRef val1, LLVMBasicBlockRef block1, LLVMValueRef val2, LLVMBasicBlockRef block2) {
+    var retType = LLVMTypeOf(val1);
+    var otherType = LLVMTypeOf(val2);
+
+    if (retType != otherType) {
+      if (retType == LLVMInt1TypeInContext(context)) {
+        val2 = LLVMBuildTrunc(builder, val2, retType, "");
+      } else {
+        val2 = LLVMBuildZExt(builder, val2, retType, "");
+      }
+    }
+
+    var phi = LLVMBuildPhi(builder, LLVMTypeOf(val1), "");
+    var valuePointer = new PointerPointer<>(2)
+      .put(0, val1)
+      .put(1, val2);
+    var blockPointer = new PointerPointer<>(2)
+      .put(0, block1)
+      .put(1, block2);
+    LLVMAddIncoming(phi, valuePointer, blockPointer, 2);
+
+    return phi;
+  }
+
+  private boolean deleteCurrentIfUnused(LLVMBasicBlockRef block) {
+    if (block == null || !blockIsUnused(block)) return false;
+    LLVMBasicBlockRef prevBlock = LLVMGetPreviousBasicBlock(block);
+    LLVMDeleteBasicBlock(block);
+    LLVMPositionBuilderAtEnd(builder, prevBlock);
+    return true;
+  }
+
+  private boolean deleteCurrentBlockIfUnused() {
+    LLVMBasicBlockRef current = currentBlock;
+    if (currentBlock == null || !blockIsUnused(currentBlock)) return false;
+
+    LLVMBasicBlockRef prevBlock = LLVMGetPreviousBasicBlock(currentBlock);
+    LLVMDeleteBasicBlock(currentBlock);
+    currentBlock = prevBlock;
+
+    LLVMPositionBuilderAtEnd(builder, prevBlock);
+    return true;
   }
 
   private <T> LLVMTypeRef getType(T item) {

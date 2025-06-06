@@ -87,4 +87,8 @@ public final class DefType implements IType {
   public boolean isAssignableFrom(IType type) {
     return isAssignableTo(type);
   }
+
+  public int getParameterCount() {
+    return parameterTypes.length;
+  }
 }

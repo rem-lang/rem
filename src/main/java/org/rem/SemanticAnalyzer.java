@@ -13,6 +13,7 @@ import org.rem.scope.Scope;
 import org.rem.types.*;
 import org.rem.utils.TypeUtil;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -291,16 +292,22 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (expr.op.isLogical()) {
           r.set(0, BoolType.INSTANCE);
 
+          if((expr.op.type() == TokenType.AND || expr.op.type() == TokenType.OR)
+            && !(TypeUtil.isBoolean(left) && TypeUtil.isBoolean(right))) {
+            r.errorFor("Both sides of `and` and `or` operator must resolve to boolean", expr);
+          }
+
           if (!TypeUtil.isBoolean(left))
             r.errorFor("Attempting to perform binary logic on non-boolean type: " + left, expr.left);
           if (!TypeUtil.isBoolean(right))
             r.errorFor("Attempting to perform binary logic on non-boolean type: " + right, expr.right);
         } else if (expr.op.isEquality()) {
-          r.set(0, BoolType.INSTANCE);
-
-          if (!isComparableTo(left, right))
+          if (!isComparableTo(left, right)) {
             r.errorFor(String.format("Comparison on incomparable types %s and %s", left, right), expr);
+          }
         }
+
+        r.set(0, BoolType.INSTANCE);
       });
   }
 
@@ -479,6 +486,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
               ),
               expression
             );
+          } else if(argType != paramType) {
+            // ensure correct casting
+            R.rule(expr.args.get(i), "cast")
+              .using(expr.args.get(i), "type")
+              .by(r1 -> r1.set(0, argType));
           }
         }
       });
@@ -978,10 +990,18 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (!TypeUtil.isBoolean(condition))
           r.errorFor("If statement with a non-boolean condition of type:  " + condition, stmt.condition);
 
-        r.set(0, condition);
+//        r.set(0, condition);
       });
 
-    Attribute[] deps = getReturnsDependencies(List.of(stmt.thenBranch, stmt.elseBranch));
+    List<Statement> dependencies = new ArrayList<>();
+    if(stmt.thenBranch != null) {
+      dependencies.add(stmt.thenBranch);
+    }
+    if(stmt.elseBranch != null) {
+      dependencies.add(stmt.elseBranch);
+    }
+
+    Attribute[] deps = getReturnsDependencies(dependencies);
     R.rule(stmt, "returns")
       .using(deps)
       .by(r -> r.set(0, deps.length == 2 && Arrays.stream(deps).allMatch(r::get)));
