@@ -1424,6 +1424,23 @@ public class Parser {
     });
   }
 
+  private Statement externDeclaration(boolean isStatic) {
+    return wrap(() -> {
+      consume(IDENTIFIER, "function name expected");
+      Token name = previous();
+      List<Expression.TypedName> params = new ArrayList<>();
+
+      consume(LPAREN, "'(' expected after function name");
+      boolean isVariadic = functionArgs(params);
+      consume(RPAREN, "')' expected after function arguments");
+
+      Typed returnType = parseReturnType("missing return type after function arguments");
+
+      endStatement();
+      return new Statement.Extern(name, params, returnType, isVariadic);
+    });
+  }
+
   private Statement declaration() {
     return wrap(() -> {
       ignoreNewlines();
@@ -1438,6 +1455,11 @@ public class Parser {
         endStatement();
       } else if (match(DEF)) {
         result = defDeclaration();
+      } else if(blockCount == 0 && check(DECORATOR) && peek().literal().equals("@def")) {
+        match(DECORATOR);
+        boolean isStatic = match(STATIC);
+        result = externDeclaration(isStatic);
+
       } else if (match(CLASS)) {
         result = classDeclaration();
       } else if (match(LBRACE)) {

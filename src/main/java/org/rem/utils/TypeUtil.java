@@ -36,6 +36,10 @@ public class TypeUtil {
     return type.type() == TypeEnum.BOOL;
   }
 
+  public static boolean isVoid(IType type) {
+    return type.type() == TypeEnum.VOID;
+  }
+
   public static boolean isArray(IType type) {
     return type.type() == TypeEnum.ARRAY;
   }

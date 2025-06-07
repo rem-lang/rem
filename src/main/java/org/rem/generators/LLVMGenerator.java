@@ -71,7 +71,7 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
     try {
       for(var linker : LINKERS) {
         // TODO: Verify that -w works for other linkers apart from clang
-        var process = Runtime.getRuntime().exec(new String[]{linker, inputPath, "-o", ouputPath, "-w"});
+        var process = Runtime.getRuntime().exec(new String[]{linker, inputPath, "-o", ouputPath, "-w", "-lc"});
 
         String out;
         try (var inputReader = process.inputReader()) {

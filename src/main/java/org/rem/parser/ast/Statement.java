@@ -30,6 +30,7 @@ public abstract class Statement extends AST {
     T visitCatchStatement(Catch statement);
     T visitBlockStatement(Block statement);
     T visitVarStatement(Var statement);
+    T visitExternStatement(Extern statement);
     T visitFunctionStatement(Function statement);
     T visitMethodStatement(Method statement);
     T visitPropertyStatement(Property statement);
@@ -56,6 +57,7 @@ public abstract class Statement extends AST {
     void visitCatchStatement(Catch statement);
     void visitBlockStatement(Block statement);
     void visitVarStatement(Var statement);
+    void visitExternStatement(Extern statement);
     void visitFunctionStatement(Function statement);
     void visitMethodStatement(Method statement);
     void visitPropertyStatement(Property statement);
@@ -411,6 +413,32 @@ public abstract class Statement extends AST {
 
     @Override public String astName() {
       return "var statement";
+    }
+  }
+
+  public static class Extern extends Statement {
+    public final Token name;
+    public final List<Expression.TypedName> parameters;
+    public final Typed returnType;
+    public final boolean isVariadic;
+
+    public Extern(Token name, List<Expression.TypedName> parameters, Typed returnType, boolean isVariadic) {
+      this.name = name;
+      this.parameters = parameters;
+      this.returnType = returnType;
+      this.isVariadic = isVariadic;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitExternStatement(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitExternStatement(this);
+    }
+
+    @Override public String astName() {
+      return "extern statement";
     }
   }
 

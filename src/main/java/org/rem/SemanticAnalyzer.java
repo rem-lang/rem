@@ -1297,6 +1297,39 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       });
   }
 
+  @Override
+  public void visitExternStatement(Statement.Extern stmt) {
+    String name = stmt.name.literal();
+    scope.declare(name, stmt);
+
+    scope = new Scope(stmt, scope);
+    R.set(stmt, "scope", scope);
+
+    Attribute[] dependencies = new Attribute[stmt.parameters.size() + 1];
+    dependencies[0] = stmt.returnType.attr("value");
+
+    for (int i = 0; i < stmt.parameters.size(); i++) {
+      Expression.TypedName typedParam = stmt.parameters.get(i);
+      visitTypedNameExpression(typedParam);
+      dependencies[i + 1] = typedParam.attr("type");
+    }
+
+    visitTyped(stmt.returnType);
+
+    R.rule(stmt, "type")
+      .using(dependencies)
+      .by(r -> {
+        IType[] paramTypes = new IType[stmt.parameters.size()];
+        IType rType = r.get(0);
+
+        for (int i = 0; i < paramTypes.length; ++i) {
+          paramTypes[i] = r.get(i + 1);
+        }
+
+        r.set(0, new DefType(rType, stmt.isVariadic, paramTypes));
+      });
+  }
+
   private void doFunctionVisit(Statement statement, String name, Typed returnType, List<Expression.TypedName> parameters, Statement.Block body, boolean isVariadic, boolean isMethod) {
     scope.declare(name, statement);
 

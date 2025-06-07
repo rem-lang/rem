@@ -1,7 +1,7 @@
 package org.rem.interfaces;
 
-import org.rem.parser.ast.Statement;
 import org.rem.compiler.CompileResult;
+import org.rem.parser.ast.Statement;
 import org.rem.parser.ast.Typed;
 
 import java.util.ArrayList;
@@ -16,6 +16,12 @@ public interface ICompileTarget<T> extends IBaseVisitor<T>, Typed.Visitor<T> {
     // This allows using functions in statements (such as other functions)
     // before being defined
     for (Statement statement : statementList) {
+      if (statement instanceof Statement.Extern extern) {
+        nodes.add(visitExternStatement(extern));
+      }
+    }
+
+    for (Statement statement : statementList) {
       if (statement instanceof Statement.Function function) {
         nodes.add(visitFunctionStatement(function));
       }
@@ -23,7 +29,9 @@ public interface ICompileTarget<T> extends IBaseVisitor<T>, Typed.Visitor<T> {
 
     // 2. Add everything not a function after
     for (Statement statement : statementList) {
-      if (statement != null && !(statement instanceof Statement.Function)) {
+      if (statement != null
+        && !(statement instanceof Statement.Extern)
+        && !(statement instanceof Statement.Function)) {
         nodes.add(visitStatement(statement));
       }
     }

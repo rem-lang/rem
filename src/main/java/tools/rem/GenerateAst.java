@@ -89,6 +89,7 @@ public class GenerateAst {
     "Catch      : Block body, Block catchBody, Block finallyBody, Expression.Identifier name",
     "Block      : List<Statement> body",
     "Var        : Expression.TypedName typedName, Expression value, boolean isConstant",
+    "Extern     : Token name, List<Expression.TypedName> parameters, Typed returnType, boolean isVariadic",
     "Function   : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic",
     "Method     : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic, boolean isStatic",
     "Property   : Expression.TypedName name, Expression value, boolean isStatic, boolean isConstant",

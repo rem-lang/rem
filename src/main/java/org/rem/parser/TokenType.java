@@ -59,7 +59,6 @@ public enum TokenType {
 
   // keywords
   AND,  // and token
-  AS,  // as token
   ASSERT,  // assert token
   BREAK,  // break token
   CATCH,  // catch token
@@ -70,7 +69,7 @@ public enum TokenType {
   DEFAULT,  // default token
   DO,  // do token
   ECHO,  // echo token
-  ELSE,  // else token
+  ELSE,  // else token,  // as token
   FALSE,  // false token
   FINALLY,  // finally token
   FOR,  // for token

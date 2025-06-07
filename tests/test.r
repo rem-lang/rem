@@ -1,4 +1,4 @@
-def sum(a: f32, b: i32) f32 {
+def sum(a: f64, b: i32) f32 {
   if a > 5 {
     return a * 60.44
   }

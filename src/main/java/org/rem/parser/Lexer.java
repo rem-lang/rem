@@ -33,7 +33,6 @@ public class Lexer {
     return new Hashtable<>() {
       {
         put("and", AND);
-        put("as", AS);
         put("assert", ASSERT);
         put("break", BREAK);
         put("catch", CATCH);

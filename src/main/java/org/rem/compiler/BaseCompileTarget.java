@@ -287,4 +287,9 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
   public T visitTyped(Typed typed) {
     return null;
   }
+
+  @Override
+  public T visitExternStatement(Statement.Extern statement) {
+    return null;
+  }
 }
