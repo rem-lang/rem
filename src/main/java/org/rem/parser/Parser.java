@@ -2,9 +2,15 @@ package org.rem.parser;
 
 import org.rem.exceptions.LexerException;
 import org.rem.exceptions.ParserException;
-import org.rem.parser.ast.*;
+import org.rem.parser.ast.AST;
+import org.rem.parser.ast.Expression;
+import org.rem.parser.ast.Statement;
+import org.rem.parser.ast.Typed;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.rem.parser.TokenType.*;
 
@@ -161,10 +167,10 @@ public class Parser {
       // 1. A list cannot be a key, so it's impossible to have `[[]type1]type2` and
       //    its derivatives.
 
-      if(match(LBRACKET)) {
+      if (match(LBRACKET)) {
         Expression.Identifier keyType = null;
 
-        if(check(IDENTIFIER)) {
+        if (check(IDENTIFIER)) {
           keyType = wrap(() -> {
             match(IDENTIFIER);
             return new Expression.Identifier(previous());
@@ -177,17 +183,17 @@ public class Parser {
 
         Typed valueType = parseType("invalid type specified", true);
 
-        if(keyType == null) {
+        if (keyType == null) {
           return new Typed.Array(valueType);
         } else {
           return new Typed.Map(new Typed.Id(keyType), valueType);
         }
-      } else if(check(IDENTIFIER)) {
+      } else if (check(IDENTIFIER)) {
         return new Typed.Id(wrap(() -> {
           match(IDENTIFIER);
           return new Expression.Identifier(previous());
         }));
-      } else if(!mustThrow) {
+      } else if (!mustThrow) {
         return null;
       } else {
         throw new ParserException(lexer.getSource(), peek(), message);
@@ -201,7 +207,7 @@ public class Parser {
 
   private Typed parseReturnType(String message) {
     Typed typed = parseType(message, false);
-    if(typed == null) {
+    if (typed == null) {
       return new Typed.Void();
     }
 
@@ -224,7 +230,7 @@ public class Parser {
       return new Expression.Identifier(previous());
     });
 
-    if(match(COLON)) {
+    if (match(COLON)) {
       return wrap(() -> new Expression.TypedName(identifier, parseType()));
     } else {
       return wrap(() -> new Expression.TypedName(identifier, null));
@@ -284,33 +290,35 @@ public class Parser {
   }
 
   private Expression finishDot(Expression e) {
-    return wrap((expr) -> {
-      ignoreNewlines();
-      var prop = wrap(() -> new Expression.Identifier(
-        consume(IDENTIFIER, "property name expected")
-      ));
+    return wrap(
+      (expr) -> {
+        ignoreNewlines();
+        var prop = wrap(() -> new Expression.Identifier(
+          consume(IDENTIFIER, "property name expected")
+        ));
 
-      if (matchAssigners()) {
-        Token token = previous();
-        if (token.type() == EQUAL) {
-          expr = new Expression.Set(expr, prop, expression());
+        if (matchAssigners()) {
+          Token token = previous();
+          if (token.type() == EQUAL) {
+            expr = new Expression.Set(expr, prop, expression());
+          } else {
+            expr = new Expression.Set(
+              (Expression) expr.clone(),
+              (Expression.Identifier) prop.clone(),
+              new Expression.Binary(
+                reflectWrap(expr, prop, new Expression.Get(expr, prop)),
+                previous().copyToType(ASSIGNER_ALTS.get(token.type()), previous().literal()),
+                assignment()
+              )
+            );
+          }
         } else {
-          expr = new Expression.Set(
-            (Expression) expr.clone(),
-            (Expression.Identifier) prop.clone(),
-            new Expression.Binary(
-              reflectWrap(expr, prop, new Expression.Get(expr, prop)),
-              previous().copyToType(ASSIGNER_ALTS.get(token.type()), previous().literal()),
-              assignment()
-            )
-          );
+          expr = new Expression.Get(expr, prop);
         }
-      } else {
-        expr = new Expression.Get(expr, prop);
-      }
 
-      return expr;
-    }, e);
+        return expr;
+      }, e
+    );
   }
 
   private Expression interpolation() {
@@ -437,21 +445,23 @@ public class Parser {
   }
 
   private Expression doCall(Expression e) {
-    return wrap((expr) -> {
-      while (true) {
-        if (match(DOT)) {
-          expr = finishDot(expr);
-        } else if (match(LPAREN)) {
-          expr = finishCall(expr);
-        } else if (match(LBRACKET)) {
-          expr = finishIndex(expr);
-        } else {
-          break;
+    return wrap(
+      (expr) -> {
+        while (true) {
+          if (match(DOT)) {
+            expr = finishDot(expr);
+          } else if (match(LPAREN)) {
+            expr = finishCall(expr);
+          } else if (match(LBRACKET)) {
+            expr = finishIndex(expr);
+          } else {
+            break;
+          }
         }
-      }
 
-      return expr;
-    }, e);
+        return expr;
+      }, e
+    );
   }
 
   private Expression call() {
@@ -463,47 +473,9 @@ public class Parser {
       Expression expression = call();
 
       if (match(INCREMENT)) {
-        if (expression instanceof Expression.Get get) {
-          expression = new Expression.Set(
-            (Expression) get.expression.clone(),
-            get.name,
-            reflectWrap(get, new Expression.Binary(
-              get,
-              previous().copyToType(PLUS, "+"),
-              new Expression.Int32(1)
-            ))
-          );
-        } else {
-          expression = new Expression.Assign(
-            expression,
-            reflectWrap(expression, new Expression.Binary(
-              (Expression) expression.clone(),
-              previous().copyToType(PLUS, "+"),
-              new Expression.Int32(1)
-            ))
-          );
-        }
+        expression = reflectWrap(expression, new Expression.Increment(expression));
       } else if (match(DECREMENT)) {
-        if (expression instanceof Expression.Get get) {
-          expression = new Expression.Set(
-            (Expression) get.expression.clone(),
-            get.name,
-            reflectWrap(get, new Expression.Binary(
-              get,
-              previous().copyToType(MINUS, "-"),
-              new Expression.Int32(1)
-            ))
-          );
-        } else {
-          expression = new Expression.Assign(
-            expression,
-            reflectWrap(expression, new Expression.Binary(
-              (Expression) expression.clone(),
-              previous().copyToType(MINUS, "-"),
-              new Expression.Int32(1)
-            ))
-          );
-        }
+        expression = reflectWrap(expression, new Expression.Decrement(expression));
       }
 
       return expression;
@@ -843,18 +815,39 @@ public class Parser {
   }
 
   private Statement whileStatement() {
-    return wrap(() -> new Statement.While(expression(), statement()));
+    return wrap(() -> {
+      Expression expr = expression();
+      Statement stmt = statement();
+
+      if (stmt instanceof Statement.Block block) {
+        return new Statement.While(expr, block);
+      } else {
+        return new Statement.While(
+          expr,
+          (Statement.Block) reflectWrap(stmt, new Statement.Block(List.of(stmt)))
+        );
+      }
+    });
   }
 
   private Statement doWhileStatement() {
     return wrap(() -> {
       Statement body = statement();
       consume(WHILE, "'while' expected after do body");
-      return new Statement.DoWhile(body, expression());
+      Expression condition = expression();
+
+      if (body instanceof Statement.Block block) {
+        return new Statement.DoWhile(block, condition);
+      } else {
+        return new Statement.DoWhile(
+          (Statement.Block) reflectWrap(body, new Statement.Block(List.of(body))),
+          condition
+        );
+      }
     });
   }
 
-  /*private Statement forStatement() {
+  /*private Statement forEachStatement() {
     return wrap(() -> {
       consume(IDENTIFIER, "variable name expected");
 
@@ -1071,7 +1064,7 @@ public class Parser {
     });
   }
 
-  private Statement iterStatement() {
+  private Statement forStatement() {
     return wrap(() -> {
       if (check(LPAREN)) {
         match(LPAREN);
@@ -1106,8 +1099,8 @@ public class Parser {
         match(RPAREN);
       }
 
-      Statement.Block body = matchBlock("'{' expected at beginning of iter block");
-      return new Statement.Iter(declaration, condition, iterator, body);
+      Statement.Block body = matchBlock("'{' expected at beginning of for block");
+      return new Statement.For(declaration, condition, iterator, body);
     });
   }
 
@@ -1132,10 +1125,10 @@ public class Parser {
         result = whileStatement();
       } else if (match(DO)) {
         result = doWhileStatement();
-      } else if (match(ITER)) {
-        result = iterStatement();
-      } /*else if (match(FOR)) {
+      } else if (match(FOR)) {
         result = forStatement();
+      } /*else if (match(FOREACH)) {
+        result = forEachStatement();
       }*/ else if (match(USING)) {
         result = usingStatement();
       } else if (match(CONTINUE)) {
@@ -1176,7 +1169,7 @@ public class Parser {
         }
 
         declaration = (Statement.Var) reflectWrap(name, value, new Statement.Var(name, value, isConstant));
-      } else if(name.type == null) {
+      } else if (name.type == null) {
         throw new ParserException(lexer.getSource(), peek(), "Type or value must be declared");
       } else {
         if (isConstant) {
@@ -1201,7 +1194,7 @@ public class Parser {
             }
 
             declarations.add((Statement) reflectWrap(name, value, new Statement.Var(name, value, isConstant)));
-          } else if(name.type == null) {
+          } else if (name.type == null) {
             throw new ParserException(lexer.getSource(), peek(), "Type or value must be declared");
           } else {
             if (isConstant) {
@@ -1229,7 +1222,8 @@ public class Parser {
           wrap(() -> {
             consume(IDENTIFIER, "variable parameter name expected");
             return new Expression.Identifier(previous());
-          }), null)));
+          }), null
+        )));
         break;
       }
 
@@ -1320,7 +1314,10 @@ public class Parser {
 
       List<Expression.TypedName> params = new ArrayList<>();
 
-      params.add(new Expression.TypedName(new Expression.Identifier(previous().copyToType(IDENTIFIER, "__arg__")), null));
+      params.add(new Expression.TypedName(
+        new Expression.Identifier(previous().copyToType(IDENTIFIER, "__arg__")),
+        null
+      ));
 
       var body = matchBlock("'{' expected after operator declaration");
 
@@ -1373,10 +1370,7 @@ public class Parser {
 
         ignoreNewlines();
 
-        if (match(STATIC)) isStatic = true;
-        else {
-          isStatic = false;
-        }
+        isStatic = match(STATIC);
 
         if (check(VAR)) {
           properties.add(wrap(() -> {
@@ -1401,7 +1395,7 @@ public class Parser {
       }
 
       boolean hasConstructor = methods.stream().anyMatch(m -> m.name.literal().equals("@new"));
-      if(!hasConstructor) {
+      if (!hasConstructor) {
         // create default constructor here
         methods.add(new Statement.Method(
           previous().copyToType(IDENTIFIER, "@new"),
@@ -1455,11 +1449,10 @@ public class Parser {
         endStatement();
       } else if (match(DEF)) {
         result = defDeclaration();
-      } else if(blockCount == 0 && check(DECORATOR) && peek().literal().equals("@def")) {
+      } else if (blockCount == 0 && check(DECORATOR) && peek().literal().equals("@def")) {
         match(DECORATOR);
         boolean isStatic = match(STATIC);
         result = externDeclaration(isStatic);
-
       } else if (match(CLASS)) {
         result = classDeclaration();
       } else if (match(LBRACE)) {

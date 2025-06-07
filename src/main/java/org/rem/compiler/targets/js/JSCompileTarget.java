@@ -1,4 +1,4 @@
-package org.rem.compiler.targets;
+package org.rem.compiler.targets.js;
 
 import norswap.uranium.Reactor;
 import org.rem.compiler.BaseCompileTarget;

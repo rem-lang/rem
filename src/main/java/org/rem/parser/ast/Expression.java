@@ -26,6 +26,8 @@ public abstract class Expression extends AST {
     T visitLogicalExpression(Logical expression);
     T visitRangeExpression(Range expression);
     T visitGroupingExpression(Grouping expression);
+    T visitIncrementExpression(Increment expression);
+    T visitDecrementExpression(Decrement expression);
     T visitIdentifierExpression(Identifier expression);
     T visitTypedNameExpression(TypedName expression);
     T visitConditionExpression(Condition expression);
@@ -58,6 +60,8 @@ public abstract class Expression extends AST {
     void visitLogicalExpression(Logical expression);
     void visitRangeExpression(Range expression);
     void visitGroupingExpression(Grouping expression);
+    void visitIncrementExpression(Increment expression);
+    void visitDecrementExpression(Decrement expression);
     void visitIdentifierExpression(Identifier expression);
     void visitTypedNameExpression(TypedName expression);
     void visitConditionExpression(Condition expression);
@@ -322,6 +326,46 @@ public abstract class Expression extends AST {
 
     @Override public String astName() {
       return "grouping expression";
+    }
+  }
+
+  public static class Increment extends Expression {
+    public final Expression expression;
+
+    public Increment(Expression expression) {
+      this.expression = expression;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitIncrementExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitIncrementExpression(this);
+    }
+
+    @Override public String astName() {
+      return "increment expression";
+    }
+  }
+
+  public static class Decrement extends Expression {
+    public final Expression expression;
+
+    public Decrement(Expression expression) {
+      this.expression = expression;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitDecrementExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitDecrementExpression(this);
+    }
+
+    @Override public String astName() {
+      return "decrement expression";
     }
   }
 

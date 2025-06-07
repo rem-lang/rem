@@ -1,13 +1,10 @@
 package org.rem.registries;
 
 import norswap.uranium.Reactor;
-import org.rem.compiler.targets.CCompileTarget;
-import org.rem.compiler.targets.JSCompileTarget;
-import org.rem.compiler.targets.LLVMCompileTarget;
+import org.rem.compiler.targets.c.CCompileTarget;
+import org.rem.compiler.targets.js.JSCompileTarget;
+import org.rem.compiler.targets.llvm.LLVMCompileTarget;
 import org.rem.interfaces.ICompileTarget;
-
-import java.util.HashMap;
-import java.util.Map;
 
 public class CompilerRegistry {
   public static ICompileTarget<?> get(Object key, Reactor reactor) {

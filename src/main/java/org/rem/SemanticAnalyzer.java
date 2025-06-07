@@ -34,6 +34,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
    */
   private AST inferenceContext;
   private AST methodContext;
+  private AST currentLoop;
 
   public SemanticAnalyzer(Reactor reactor, boolean showWarnings) {
     this.R = reactor;
@@ -324,6 +325,40 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     R.rule(expr, "type")
       .using(expr.expression, "type")
       .by(Rule::copyFirst);
+  }
+
+  @Override
+  public void visitIncrementExpression(Expression.Increment expr) {
+    visitExpression(expr.expression);
+
+    R.rule(expr, "type")
+      .using(expr.expression, "type")
+      .by(r -> {
+        IType type = r.get(0);
+
+        if(!TypeUtil.isNumericType(type)) {
+          r.errorFor("Cannot increment non-numeric value of type " + type, expr);
+        }
+
+        r.set(0, type);
+      });
+  }
+
+  @Override
+  public void visitDecrementExpression(Expression.Decrement expr) {
+    visitExpression(expr.expression);
+
+    R.rule(expr, "type")
+      .using(expr.expression, "type")
+      .by(r -> {
+        IType type = r.get(0);
+
+        if(!TypeUtil.isNumericType(type)) {
+          r.errorFor("Cannot decrement non-numeric value of type " + type, expr);
+        }
+
+        r.set(0, type);
+      });
   }
 
   @Override
@@ -1008,19 +1043,44 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
   }
 
   @Override
-  public void visitIterStatement(Statement.Iter stmt) {
+  public void visitForStatement(Statement.For stmt) {
     visitStatement(stmt.declaration);
-    visitExpression(stmt.condition);
     visitStatement(stmt.interation);
-    visitStatement(stmt.body);
 
-    // TODO: Implement
+    AST previousLoop = currentLoop;
+    currentLoop = stmt;
+    visitStatement(stmt.body);
+    currentLoop = previousLoop;
+
+    if(stmt.condition != null) {
+      visitExpression(stmt.condition);
+
+      R.rule()
+        .using(stmt.condition, "type")
+        .by(r -> {
+          IType type = r.get(0);
+          if (!TypeUtil.isBoolean(type)) {
+            r.error(
+              "While statement with a non-boolean condition of type: " + type,
+              stmt.condition
+            );
+          }
+        });
+    }
+
+    R.rule(stmt, "breaks")
+      .using(stmt.body, "breaks")
+      .by(Rule::copyFirst);
   }
 
   @Override
   public void visitWhileStatement(Statement.While stmt) {
     visitExpression(stmt.condition);
+
+    AST previousLoop = currentLoop;
+    currentLoop = stmt;
     visitStatement(stmt.body);
+    currentLoop = previousLoop;
 
     R.rule()
       .using(stmt.condition, "type")
@@ -1033,12 +1093,20 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           );
         }
       });
+
+    R.rule(stmt, "breaks")
+      .using(stmt.body, "breaks")
+      .by(Rule::copyFirst);
   }
 
   @Override
   public void visitDoWhileStatement(Statement.DoWhile stmt) {
-    visitStatement(stmt.body);
     visitExpression(stmt.condition);
+
+    AST previousLoop = currentLoop;
+    currentLoop = stmt;
+    visitStatement(stmt.body);
+    currentLoop = previousLoop;
 
     R.rule()
       .using(stmt.condition, "type")
@@ -1051,18 +1119,31 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           );
         }
       });
+
+    R.rule(stmt, "breaks")
+      .using(stmt.body, "breaks")
+      .by(Rule::copyFirst);
   }
 
   @Override
   public void visitContinueStatement(Statement.Continue stmt) {
-
-    // TODO: Implement
+    if(currentLoop == null) {
+      R.rule()
+        .by(r -> r.errorFor("Cannot use continue outside of loop", stmt));
+    } else {
+      R.set(stmt, "ast", currentLoop);
+    }
   }
 
   @Override
   public void visitBreakStatement(Statement.Break stmt) {
-
-    // TODO: Implement
+    if(currentLoop == null) {
+      R.rule()
+        .by(r -> r.errorFor("Cannot use break outside of loop", stmt));
+    } else {
+      R.set(stmt, "ast", currentLoop);
+      R.set(stmt, "breaks", true);
+    }
   }
 
   @Override
@@ -1217,6 +1298,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
     Attribute[] deps = getReturnsDependencies(stmt.body);
     R.rule(stmt, "returns")
+      .using(deps)
+      .by(r -> r.set(0, deps.length != 0 && Arrays.stream(deps).anyMatch(r::get)));
+
+    R.rule(stmt, "breaks")
       .using(deps)
       .by(r -> r.set(0, deps.length != 0 && Arrays.stream(deps).anyMatch(r::get)));
 

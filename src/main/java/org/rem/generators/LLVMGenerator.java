@@ -3,7 +3,7 @@ package org.rem.generators;
 import org.bytedeco.llvm.LLVM.LLVMTargetRef;
 import org.bytedeco.llvm.LLVM.LLVMValueRef;
 import org.rem.compiler.CompileResult;
-import org.rem.compiler.targets.LLVMCompileTarget;
+import org.rem.compiler.targets.llvm.LLVMCompileTarget;
 import org.rem.interfaces.IGenerator;
 
 import org.bytedeco.javacpp.BytePointer;
@@ -67,6 +67,9 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
     if(!ouputPath.endsWith(".exe") && isWindows) {
       ouputPath += ".exe";
     }
+
+    // TODO: Only export a static library if the main function is missing
+    // OR CREATE A PROPER LINKER
 
     try {
       for(var linker : LINKERS) {

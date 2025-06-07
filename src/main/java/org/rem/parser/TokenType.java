@@ -72,11 +72,11 @@ public enum TokenType {
   ELSE,  // else token,  // as token
   FALSE,  // false token
   FINALLY,  // finally token
-  FOR,  // for token
+  FOREACH,  // for token
   IF,  // if token
   IMPORT,  // import token
   IN,  // in token
-  ITER,  // iter token
+  FOR,  // iter token
   NIL,  // nil token
   NEW,  // new token
   OR,  // or token

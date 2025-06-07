@@ -169,7 +169,7 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
   }
 
   @Override
-  public T visitIterStatement(Statement.Iter stmt) {
+  public T visitForStatement(Statement.For stmt) {
     return null;
   }
 
@@ -290,6 +290,16 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
 
   @Override
   public T visitExternStatement(Statement.Extern statement) {
+    return null;
+  }
+
+  @Override
+  public T visitDecrementExpression(Expression.Decrement expression) {
+    return null;
+  }
+
+  @Override
+  public T visitIncrementExpression(Expression.Increment expression) {
     return null;
   }
 }

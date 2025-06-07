@@ -1,4 +1,4 @@
-package org.rem.compiler.targets;
+package org.rem.compiler.targets.llvm;
 
 import norswap.uranium.Reactor;
 import org.bytedeco.javacpp.PointerPointer;
@@ -96,6 +96,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitStatement(Statement statement) {
+    if(statement == null) return null;
     return statement.accept(this);
   }
 
@@ -300,7 +301,43 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     if (value == null) {
       throw new RuntimeException("We should never get here.");
     }
+
+    if(LLVMIsAAllocaInst(value) != null) {
+      return LLVMBuildLoad2(builder, LLVMGetAllocatedType(value), value, "");
+    }
+
     return value;
+  }
+
+  @Override
+  public LLVMValueRef visitAssignExpression(Expression.Assign expr) {
+
+    LLVMValueRef value;
+    if(expr.value == null || expr.value instanceof Expression.Nil) {
+      value = LLVMGetUndef(getType(expr));
+    } else {
+      value = visitExpression(expr.value);
+    }
+
+    var expression = visitExpression(expr.expression);
+    return LLVMBuildStore(builder, value, LLVMGetOperand(expression, 0));
+  }
+
+  @Override
+  public LLVMValueRef visitIncrementExpression(Expression.Increment expr) {
+    var value = visitExpression(expr.expression);
+
+    var iType = getIType(expr);
+    var one = LLVMConstInt(llvmType(getIType(expr)), 1, 0);
+
+    LLVMValueRef addition;
+    if(TypeUtil.isIntegerType(iType)) {
+      addition = LLVMBuildAdd(builder, value, one, "");
+    } else {
+      addition = LLVMBuildFAdd(builder, value, one, "");
+    }
+
+    return LLVMBuildStore(builder, addition, LLVMGetOperand(value, 0));
   }
 
   @Override
@@ -314,7 +351,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
       throw new RuntimeException("Should not end up here!");
     }
 
-    IType returnType = R.get(expr, "type");
+//    IType returnType = R.get(expr, "type");
 
     var values = new PointerPointer<LLVMValueRef>(expr.args.size());
     for (int i = 0; i < expr.args.size(); i++) {
@@ -355,6 +392,34 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     }
 
     return super.visitBlockStatement(stmt);
+  }
+
+  @Override
+  public LLVMValueRef visitVarStatement(Statement.Var stmt) {
+    var type = getType(stmt);
+
+    String name = stmt.typedName.name.token.literal();
+
+    var allocation = LLVMBuildAlloca(builder, type, name);
+    LLVMValueRef value;
+
+    if(stmt.value != null && !(stmt.value instanceof Expression.Nil)) {
+      value = visitExpression(stmt.value);
+    } else {
+      value =  LLVMGetUndef(type);
+    }
+
+    env.put(name, allocation);
+    return LLVMBuildStore(builder, value, allocation);
+  }
+
+  @Override
+  public LLVMValueRef visitVarListStatement(Statement.VarList stmt) {
+    for(var statement : stmt.declarations) {
+      visitStatement(statement);
+    }
+
+    return null;
   }
 
   @Override
@@ -471,6 +536,132 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   @Override
+  public LLVMValueRef visitForStatement(Statement.For stmt) {
+    visitStatement(stmt.declaration);
+
+    var incrementBlock = stmt.interation == null
+      ? null : LLVMCreateBasicBlockInContext(context, "for.inc");
+
+    var bodyBlock = stmt.body.body.isEmpty()
+      ? null : LLVMCreateBasicBlockInContext(context, "for.body");
+
+    LLVMBasicBlockRef conditionBlock = null;
+
+    var loop = ExpressionUtil.loopTypeForCondition(stmt.condition, false);
+
+    // This is the starting block to loop back to, and may either be cond, body or inc
+    var loopStartBlock = bodyBlock != null ? bodyBlock : incrementBlock;
+
+    // We only emit a cond block if we have a normal loop.
+    if (loop == LoopType.NORMAL) {
+      loopStartBlock = conditionBlock = LLVMCreateBasicBlockInContext( context, "for.cond");
+    }
+
+    // In the case that *none* of the blocks exist.
+    if (incrementBlock == null && bodyBlock == null && conditionBlock == null) {
+      return null;
+    }
+
+    var exitBlock = LLVMCreateBasicBlockInContext(context, "for.exit");
+
+    // Break is straightforward, it always jumps out.
+    // For `continue`:
+    // 1. If there is inc, jump to condition
+    // 2. If this is not looping, jump to the exit, otherwise go to cond/body depending on what the start is.
+    LLVMBasicBlockRef continueBlock = incrementBlock;
+    if (continueBlock == null) {
+      continueBlock = loop == LoopType.NONE ? exitBlock : loopStartBlock;
+    }
+
+    stmt.continueBlock = continueBlock;
+    stmt.exitBlock = exitBlock;
+
+    // We have a normal loop, so we emit a cond.
+    if (loop == LoopType.NORMAL) {
+      LLVMBuildBr(builder, conditionBlock);
+
+      // Emit the block
+      emitBlock(conditionBlock);
+      var condition = visitExpression(stmt.condition);
+
+      // If we have a body, conditionally jump to it.
+      LLVMBasicBlockRef conditionSuccess = bodyBlock != null ? bodyBlock : incrementBlock;
+
+      // If there is a while (...) { } we need to set the success to this block
+      if (conditionSuccess == null) conditionSuccess = conditionBlock;
+
+      // Otherwise, jump to inc or cond depending on what's available.
+      LLVMBuildCondBr(builder, condition, conditionSuccess, exitBlock);
+    }
+
+    // The optional cond is emitted, so emit the body
+    if (bodyBlock != null) {
+      // If we have LOOP_NONE, then we don't need a new block here
+      // since we will just exit. That leaves the infinite loop.
+      switch (loop) {
+        case NORMAL:
+          // If we have LOOP_NORMAL, we already emitted a br to the body.
+          // So emit the block
+          emitBlock(bodyBlock);
+          break;
+        case INFINITE:
+          // In this case, we have no cond, so we need to emit the br and
+          // then the block
+          LLVMBuildBr(builder, bodyBlock);
+          emitBlock(bodyBlock);
+        case NONE:
+          // If there is no loop, then we will just fall through and the
+          // block is needed.
+          bodyBlock = null;
+          break;
+      }
+
+      // Now emit the body
+      visitStatement(stmt.body);
+
+      // Did we have a jump to inc yet?
+//      if (incrementBlock != null && !blockIsUnused(incrementBlock)) {
+        // If so, we emit the jump to the inc block.
+        LLVMBuildBr(builder, incrementBlock);
+//      } else {
+//        incrementBlock = null;
+//      }
+    }
+
+    if (stmt.interation != null) {
+      // We might have neither body nor cond
+      // In that case we do a jump from the init.
+      if (loopStartBlock == incrementBlock) {
+        LLVMBuildBr(builder, incrementBlock);
+      }
+      if (incrementBlock != null) {
+        // Emit the block if it exists.
+        // The inc block might also be the end of the body block.
+        emitBlock(incrementBlock);
+      }
+
+      if (currentBlockIsInUse() != null) {
+        visitStatement(stmt.interation);
+      }
+    }
+
+    // Loop back.
+    if (loop != LoopType.NONE) {
+      LLVMBuildBr(builder, loopStartBlock);
+    } else {
+      // If the exit block is unused, skip it.
+      if (blockIsUnused(exitBlock)) {
+        return null;
+      }
+
+      LLVMBuildBr(builder, exitBlock);
+    }
+
+    emitBlock(exitBlock);
+    return null;
+  }
+
+  @Override
   public LLVMValueRef visitReturnStatement(Statement.Return stmt) {
     if (stmt.value != null) {
       var value = visitExpression(stmt.value);
@@ -533,7 +724,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     Boolean returns = R.get(stmt.body, "returns");
 
     visitStatement(stmt.body);
-    if(!returns) {
+    if (!returns) {
       LLVMBuildRetVoid(builder);
     }
 
@@ -628,7 +819,6 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   private boolean deleteCurrentBlockIfUnused() {
-    LLVMBasicBlockRef current = currentBlock;
     if (currentBlock == null || !blockIsUnused(currentBlock)) return false;
 
     LLVMBasicBlockRef prevBlock = LLVMGetPreviousBasicBlock(currentBlock);

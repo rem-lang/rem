@@ -47,10 +47,10 @@ public class Lexer {
         put("false", FALSE);
         put("finally", FINALLY);
         put("for", FOR);
+        put("foreach", FOREACH);
         put("if", IF);
         put("import", IMPORT);
         put("in", IN);
-        put("iter", ITER);
         put("new", NEW);
         put("nil", NIL);
         put("or", OR);

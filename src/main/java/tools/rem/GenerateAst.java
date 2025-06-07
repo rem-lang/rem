@@ -55,6 +55,8 @@ public class GenerateAst {
     "Logical            : Expression left, Token op, Expression right",
     "Range              : Expression lower, Expression upper",
     "Grouping           : Expression expression",
+    "Increment          : Expression expression",
+    "Decrement          : Expression expression",
     "Identifier         : Token token",
     "TypedName          : Identifier name, Typed type",
     "Condition          : Expression expression, Expression truth, Expression falsy",
@@ -76,9 +78,9 @@ public class GenerateAst {
     "Echo       : Expression value",
     "Simple     : Expression expression",
     "If         : Expression condition, Statement thenBranch, Statement elseBranch",
-    "Iter       : Statement declaration, Expression condition, Simple interation, Block body",
-    "While      : Expression condition, Statement body",
-    "DoWhile    : Statement body, Expression condition",
+    "For        : Statement declaration, Expression condition, Simple interation, Block body  : Object continueBlock, Object exitBlock",
+    "While      : Expression condition, Block body",
+    "DoWhile    : Block body, Expression condition",
     "Continue   :",
     "Break      :",
     "Raise      : Expression exception",
@@ -131,10 +133,15 @@ public class GenerateAst {
       String className = brokenType[0].trim();
 
       String fields = "";
-      if (brokenType.length > 1)
+      String setters = "";
+      if (brokenType.length > 1) {
         fields = brokenType[1].trim();
+        if(brokenType.length > 2) {
+          setters = brokenType[2].trim();
+        }
+      }
 
-      defineType(writer, baseName, className, fields);
+      defineType(writer, baseName, className, fields, setters);
     }
 
     writer.println("}");
@@ -165,7 +172,7 @@ public class GenerateAst {
     writer.println("  }");
   }
 
-  private static void defineType(PrintWriter writer, String baseName, String className, String fieldsList) {
+  private static void defineType(PrintWriter writer, String baseName, String className, String fieldsList, String setterList) {
     writer.println();
     writer.println("  public static class " + className + " extends " + baseName + " {");
 
@@ -176,6 +183,14 @@ public class GenerateAst {
       // Fields.
       for (String field : fields) {
         writer.println("    public final " + field.trim() + ";");
+      }
+      writer.println();
+    }
+
+    if(!setterList.isEmpty()) {
+      // Setters
+      for (String setter : setterList.split(", ")) {
+        writer.println("    public " + setter.trim() + ";");
       }
       writer.println();
     }

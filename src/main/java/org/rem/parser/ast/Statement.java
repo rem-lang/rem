@@ -17,7 +17,7 @@ public abstract class Statement extends AST {
     T visitEchoStatement(Echo statement);
     T visitSimpleStatement(Simple statement);
     T visitIfStatement(If statement);
-    T visitIterStatement(Iter statement);
+    T visitForStatement(For statement);
     T visitWhileStatement(While statement);
     T visitDoWhileStatement(DoWhile statement);
     T visitContinueStatement(Continue statement);
@@ -44,7 +44,7 @@ public abstract class Statement extends AST {
     void visitEchoStatement(Echo statement);
     void visitSimpleStatement(Simple statement);
     void visitIfStatement(If statement);
-    void visitIterStatement(Iter statement);
+    void visitForStatement(For statement);
     void visitWhileStatement(While statement);
     void visitDoWhileStatement(DoWhile statement);
     void visitContinueStatement(Continue statement);
@@ -130,13 +130,16 @@ public abstract class Statement extends AST {
     }
   }
 
-  public static class Iter extends Statement {
+  public static class For extends Statement {
     public final Statement declaration;
     public final Expression condition;
     public final Simple interation;
     public final Block body;
 
-    public Iter(Statement declaration, Expression condition, Simple interation, Block body) {
+    public Object continueBlock;
+    public Object exitBlock;
+
+    public For(Statement declaration, Expression condition, Simple interation, Block body) {
       this.declaration = declaration;
       this.condition = condition;
       this.interation = interation;
@@ -144,23 +147,23 @@ public abstract class Statement extends AST {
     }
 
     public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitIterStatement(this);
+      return visitor.visitForStatement(this);
     }
 
     public void accept(VoidVisitor visitor) {
-      visitor.visitIterStatement(this);
+      visitor.visitForStatement(this);
     }
 
     @Override public String astName() {
-      return "iter statement";
+      return "for statement";
     }
   }
 
   public static class While extends Statement {
     public final Expression condition;
-    public final Statement body;
+    public final Block body;
 
-    public While(Expression condition, Statement body) {
+    public While(Expression condition, Block body) {
       this.condition = condition;
       this.body = body;
     }
@@ -179,10 +182,10 @@ public abstract class Statement extends AST {
   }
 
   public static class DoWhile extends Statement {
-    public final Statement body;
+    public final Block body;
     public final Expression condition;
 
-    public DoWhile(Statement body, Expression condition) {
+    public DoWhile(Block body, Expression condition) {
       this.body = body;
       this.condition = condition;
     }
