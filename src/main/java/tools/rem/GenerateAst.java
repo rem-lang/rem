@@ -58,20 +58,20 @@ public class GenerateAst {
     "Increment          : Expression expression",
     "Decrement          : Expression expression",
     "Identifier         : Token token",
+    "Array              : List<Expression> items",
     "TypedName          : Identifier name, Typed type",
+    "Assign             : Expression expression, Expression value",
+    "Update             : Expression expression, Token op, Expression value",
     "Condition          : Expression expression, Expression truth, Expression falsy",
     "Call               : Expression callee, List<Expression> args",
     "Get                : Expression expression, Identifier name",
     "Set                : Expression expression, Identifier name, Expression value",
     "Index              : Expression callee, Expression argument",
     "Slice              : Expression callee, Expression lower, Expression upper",
-    "Array              : List<Expression> items",
     "Dict               : List<Expression> keys, List<Expression> values",
     "New                : Expression expression",
     "Parent             :",
     "Self               :",
-    "Assign             : Expression expression, Expression value",
-    "Update             : Expression expression, Token op, Expression value",
     "Anonymous          : Statement.Function function"
   );
 
@@ -90,14 +90,14 @@ public class GenerateAst {
     "Using      : Expression expression, List<Expression> caseLabels, List<Statement> caseBodies, Statement defaultCase",
     "Import     : String path, List<Token> elements, boolean all",
     "Catch      : Block body, Block catchBody, Block finallyBody, Expression.Identifier name",
-    "Block      : List<Statement> body",
     "Var        : Expression.TypedName typedName, Expression value, boolean isConstant",
+    "VarList    : List<Statement> declarations",
+    "Block      : List<Statement> body",
     "Extern     : Token name, List<Expression.TypedName> parameters, Typed returnType, boolean isVariadic",
     "Function   : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic",
     "Method     : Token name, List<Expression.TypedName> parameters, Typed returnType, Statement.Block body, boolean isVariadic, boolean isStatic",
     "Property   : Expression.TypedName name, Expression value, boolean isStatic, boolean isConstant",
-    "Class      : Token name, Expression.Identifier superclass, List<Property> properties, List<Method> methods, List<Method> operators",
-    "VarList    : List<Statement> declarations"
+    "Class      : Token name, Expression.Identifier superclass, List<Property> properties, List<Method> methods, List<Method> operators"
   );
 
   private static void defineAst(String outputDir, String baseName, List<String> types) throws IOException {
