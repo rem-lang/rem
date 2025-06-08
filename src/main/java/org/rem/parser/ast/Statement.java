@@ -163,6 +163,9 @@ public abstract class Statement extends AST {
     public final Expression condition;
     public final Block body;
 
+    public Object continueBlock;
+    public Object exitBlock;
+
     public While(Expression condition, Block body) {
       this.condition = condition;
       this.body = body;
@@ -184,6 +187,9 @@ public abstract class Statement extends AST {
   public static class DoWhile extends Statement {
     public final Block body;
     public final Expression condition;
+
+    public Object continueBlock;
+    public Object exitBlock;
 
     public DoWhile(Block body, Expression condition) {
       this.body = body;

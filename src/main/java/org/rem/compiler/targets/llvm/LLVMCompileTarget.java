@@ -589,6 +589,162 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   @Override
+  public LLVMValueRef visitWhileStatement(Statement.While stmt) {
+    var bodyBlock = !stmt.body.body.isEmpty() ? LLVMCreateBasicBlockInContext(context, "while.body") : null;
+    LLVMBasicBlockRef conditionBlock = null;
+
+    var loop = ExpressionUtil.loopTypeForCondition(stmt.condition, false);
+
+    LLVMBasicBlockRef loopStartBlock = bodyBlock;
+    if(loop == LoopType.NORMAL) {
+      conditionBlock = LLVMCreateBasicBlockInContext(context, "while.cond");
+      loopStartBlock = conditionBlock;
+    }
+
+    if(conditionBlock == null && bodyBlock == null) {
+      return null;
+    }
+
+    var exitBlock = LLVMCreateBasicBlockInContext(context, "while.exit");
+
+    stmt.continueBlock = loop == LoopType.NONE ? exitBlock : loopStartBlock;
+    stmt.exitBlock = exitBlock;
+
+    if (loop == LoopType.NORMAL) {
+      LLVMBuildBr(builder, conditionBlock);
+
+      // Emit the block
+      emitBlock(conditionBlock);
+      var condition = visitExpression(stmt.condition);
+
+      // If we have a body, conditionally jump to it.
+      LLVMBasicBlockRef conditionSuccess = bodyBlock != null ? bodyBlock : conditionBlock;
+      // Otherwise, jump to inc or cond depending on what's available.
+      LLVMBuildCondBr(builder, condition, conditionSuccess, exitBlock);
+    }
+
+    // The optional cond is emitted, so emit the body
+    if (bodyBlock != null) {
+      // If we have LOOP NONE, then we don't need a new block here
+      // since we will just exit. That leaves the infinite loop.
+      switch (loop) {
+        case NORMAL:
+          // If we have LOOP_NORMAL, we already emitted a br to the body.
+          // So emit the block
+          emitBlock(bodyBlock);
+          break;
+        case INFINITE:
+          // In this case, we have no cond, so we need to emit the br and
+          // then the block
+          LLVMBuildBr(builder, bodyBlock);
+          emitBlock(bodyBlock);
+        case NONE:
+          // If there is no loop, then we will just fall through and the
+          // block is needed.
+          bodyBlock = null;
+          break;
+      }
+
+      // Now emit the body
+      visitStatement(stmt.body);
+    }
+
+    // Loop back.
+    if (loop != LoopType.NONE) {
+      LLVMBuildBr(builder, loopStartBlock);
+    } else {
+      // If the exit block is unused, skip it.
+      if (blockIsUnused(exitBlock)) {
+        return null;
+      }
+
+      LLVMBuildBr(builder, exitBlock);
+    }
+
+    // And insert exit block
+    emitBlock(exitBlock);
+    return super.visitWhileStatement(stmt);
+  }
+
+  @Override
+  public LLVMValueRef visitDoWhileStatement(Statement.DoWhile stmt) {
+    var bodyBlock = !stmt.body.body.isEmpty() ? LLVMCreateBasicBlockInContext(context, "do.body") : null;
+    LLVMBasicBlockRef conditionBlock = null;
+
+    var loop = ExpressionUtil.loopTypeForCondition(stmt.condition, true);
+
+    LLVMBasicBlockRef loopStartBlock = bodyBlock;
+    if(loop == LoopType.NORMAL) {
+      conditionBlock = LLVMCreateBasicBlockInContext(context, "do.cond");
+      loopStartBlock = conditionBlock;
+    }
+
+    if(conditionBlock == null && bodyBlock == null) {
+      return null;
+    }
+
+    var exitBlock = LLVMCreateBasicBlockInContext(context, "do.exit");
+
+    stmt.continueBlock = loop == LoopType.NONE ? exitBlock : loopStartBlock;
+    stmt.exitBlock = exitBlock;
+
+    if (loop == LoopType.NORMAL) {
+      LLVMBuildBr(builder, bodyBlock != null ? bodyBlock : conditionBlock);
+
+      // Emit the block
+      emitBlock(conditionBlock);
+      var condition = visitExpression(stmt.condition);
+
+      // If we have a body, conditionally jump to it.
+      LLVMBasicBlockRef conditionSuccess = bodyBlock != null ? bodyBlock : conditionBlock;
+      // Otherwise, jump to inc or cond depending on what's available.
+      LLVMBuildCondBr(builder, condition, conditionSuccess, exitBlock);
+    }
+
+    // The optional cond is emitted, so emit the body
+    if (bodyBlock != null) {
+      // If we have LOOP NONE, then we don't need a new block here
+      // since we will just exit. That leaves the infinite loop.
+      switch (loop) {
+        case NORMAL:
+          // If we have LOOP_NORMAL, we already emitted a br to the body.
+          // So emit the block
+          emitBlock(bodyBlock);
+          break;
+        case INFINITE:
+          // In this case, we have no cond, so we need to emit the br and
+          // then the block
+          LLVMBuildBr(builder, bodyBlock);
+          emitBlock(bodyBlock);
+        case NONE:
+          // If there is no loop, then we will just fall through and the
+          // block is needed.
+          bodyBlock = null;
+          break;
+      }
+
+      // Now emit the body
+      visitStatement(stmt.body);
+    }
+
+    // Loop back.
+    if (loop != LoopType.NONE) {
+      LLVMBuildBr(builder, loopStartBlock);
+    } else {
+      // If the exit block is unused, skip it.
+      if (blockIsUnused(exitBlock)) {
+        return null;
+      }
+
+      LLVMBuildBr(builder, exitBlock);
+    }
+
+    // And insert exit block
+    emitBlock(exitBlock);
+    return super.visitDoWhileStatement(stmt);
+  }
+
+  @Override
   public LLVMValueRef visitForStatement(Statement.For stmt) {
     visitStatement(stmt.declaration);
 

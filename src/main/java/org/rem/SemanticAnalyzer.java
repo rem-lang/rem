@@ -1119,6 +1119,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     R.rule(stmt, "breaks")
       .using(stmt.body, "breaks")
       .by(Rule::copyFirst);
+
+    Attribute[] deps = getReturnsDependencies(List.of(stmt.body));
+    R.rule(stmt, "returns")
+      .using(deps)
+      .by(r -> r.set(0, deps.length == 2 && Arrays.stream(deps).allMatch(r::get)));
   }
 
   @Override
@@ -1145,6 +1150,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     R.rule(stmt, "breaks")
       .using(stmt.body, "breaks")
       .by(Rule::copyFirst);
+
+    Attribute[] deps = getReturnsDependencies(List.of(stmt.body));
+    R.rule(stmt, "returns")
+      .using(deps)
+      .by(r -> r.set(0, deps.length == 2 && Arrays.stream(deps).allMatch(r::get)));
   }
 
   @Override
@@ -1171,6 +1181,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     R.rule(stmt, "breaks")
       .using(stmt.body, "breaks")
       .by(Rule::copyFirst);
+
+    Attribute[] deps = getReturnsDependencies(List.of(stmt.body));
+    R.rule(stmt, "returns")
+      .using(deps)
+      .by(r -> r.set(0, deps.length == 2 && Arrays.stream(deps).allMatch(r::get)));
   }
 
   @Override
