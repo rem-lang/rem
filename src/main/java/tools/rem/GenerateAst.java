@@ -71,6 +71,7 @@ public class GenerateAst {
     "Parent             :",
     "Self               :",
     "Assign             : Expression expression, Expression value",
+    "Update             : Expression expression, Token op, Expression value",
     "Anonymous          : Statement.Function function"
   );
 

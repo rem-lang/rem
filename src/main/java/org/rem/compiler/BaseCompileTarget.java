@@ -302,4 +302,9 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
   public T visitIncrementExpression(Expression.Increment expression) {
     return null;
   }
+
+  @Override
+  public T visitUpdateExpression(Expression.Update expression) {
+    return null;
+  }
 }

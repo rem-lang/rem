@@ -661,14 +661,7 @@ public class Parser {
         if (type.type() == EQUAL) {
           return new Expression.Assign(expression, assignment());
         } else {
-          return new Expression.Assign(
-            expression,
-            wrap(() -> new Expression.Binary(
-              (Expression) expression.clone(),
-              previous().copyToType(ASSIGNER_ALTS.get(type.type()), type.literal()),
-              assignment()
-            ))
-          );
+          return new Expression.Update(expression, type, assignment());
         }
       }
 

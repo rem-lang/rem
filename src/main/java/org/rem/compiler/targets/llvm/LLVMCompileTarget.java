@@ -96,7 +96,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitStatement(Statement statement) {
-    if(statement == null) return null;
+    if (statement == null) return null;
     return statement.accept(this);
   }
 
@@ -302,7 +302,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
       throw new RuntimeException("We should never get here.");
     }
 
-    if(LLVMIsAAllocaInst(value) != null) {
+    if (LLVMIsAAllocaInst(value) != null) {
       return LLVMBuildLoad2(builder, LLVMGetAllocatedType(value), value, "");
     }
 
@@ -313,7 +313,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   public LLVMValueRef visitAssignExpression(Expression.Assign expr) {
 
     LLVMValueRef value;
-    if(expr.value == null || expr.value instanceof Expression.Nil) {
+    if (expr.value == null || expr.value instanceof Expression.Nil) {
       value = LLVMGetUndef(getType(expr));
     } else {
       value = visitExpression(expr.value);
@@ -324,6 +324,59 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   @Override
+  public LLVMValueRef visitUpdateExpression(Expression.Update expr) {
+    var iType = getIType(expr.expression);
+    var vType = getIType(expr.value);
+
+    var iValue = visitExpression(expr.expression);
+    var vValue = visitExpression(expr.value);
+
+    // TODO: Handle string concatenation and multiplication
+    // TODO: Handle array multiplication
+
+    if (iType != vType) {
+      vValue = castNumberToType(vValue, vType, iType);
+    }
+
+    // TODO: Handle bitwise here
+    vValue = switch (expr.op.type()) {
+      case PLUS_EQ -> {
+        if (TypeUtil.isFloatType(iType)) {
+          yield LLVMBuildFAdd(builder, iValue, vValue, "");
+        }
+
+        yield LLVMBuildAdd(builder, iValue, vValue, "");
+      }
+      case MINUS_EQ -> {
+        if (TypeUtil.isFloatType(iType)) {
+          yield LLVMBuildFSub(builder, iValue, vValue, "");
+        }
+
+        yield LLVMBuildSub(builder, iValue, vValue, "");
+      }
+      case MULTIPLY_EQ -> {
+        if (TypeUtil.isFloatType(iType)) {
+          yield LLVMBuildFMul(builder, iValue, vValue, "");
+        }
+
+        yield LLVMBuildMul(builder, iValue, vValue, "");
+      }
+      case DIVIDE_EQ -> LLVMBuildFDiv(builder, iValue, vValue, "");
+      case FLOOR_EQ -> {
+        if (TypeUtil.isFloatType(iType)) {
+          yield LLVMBuildUDiv(builder, iValue, vValue, "");
+        }
+
+        yield LLVMBuildUDiv(builder, iValue, vValue, "");
+      }
+      default -> throw new RuntimeException("");
+    };
+
+    LLVMBuildStore(builder, vValue, LLVMGetOperand(iValue, 0));
+    return vValue;
+  }
+
+  @Override
   public LLVMValueRef visitIncrementExpression(Expression.Increment expr) {
     var value = visitExpression(expr.expression);
 
@@ -331,7 +384,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     var one = LLVMConstInt(llvmType(getIType(expr)), 1, 0);
 
     LLVMValueRef addition;
-    if(TypeUtil.isIntegerType(iType)) {
+    if (TypeUtil.isIntegerType(iType)) {
       addition = LLVMBuildAdd(builder, value, one, "");
     } else {
       addition = LLVMBuildFAdd(builder, value, one, "");
@@ -403,10 +456,10 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     var allocation = LLVMBuildAlloca(builder, type, name);
     LLVMValueRef value;
 
-    if(stmt.value != null && !(stmt.value instanceof Expression.Nil)) {
+    if (stmt.value != null && !(stmt.value instanceof Expression.Nil)) {
       value = visitExpression(stmt.value);
     } else {
-      value =  LLVMGetUndef(type);
+      value = LLVMGetUndef(type);
     }
 
     env.put(name, allocation);
@@ -415,7 +468,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitVarListStatement(Statement.VarList stmt) {
-    for(var statement : stmt.declarations) {
+    for (var statement : stmt.declarations) {
       visitStatement(statement);
     }
 
@@ -554,7 +607,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
     // We only emit a cond block if we have a normal loop.
     if (loop == LoopType.NORMAL) {
-      loopStartBlock = conditionBlock = LLVMCreateBasicBlockInContext( context, "for.cond");
+      loopStartBlock = conditionBlock = LLVMCreateBasicBlockInContext(context, "for.cond");
     }
 
     // In the case that *none* of the blocks exist.
@@ -621,8 +674,8 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
       // Did we have a jump to inc yet?
 //      if (incrementBlock != null && !blockIsUnused(incrementBlock)) {
-        // If so, we emit the jump to the inc block.
-        LLVMBuildBr(builder, incrementBlock);
+      // If so, we emit the jump to the inc block.
+      LLVMBuildBr(builder, incrementBlock);
 //      } else {
 //        incrementBlock = null;
 //      }
@@ -671,6 +724,14 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 //      System.out.println("CAST = "+lCastType+", T: " +type);
       if (lCastType != null && lCastType != type) {
         value = castNumberToType(value, type, lCastType);
+        type = lCastType;
+      }
+
+      if (LLVMIsAStoreInst(value) != null) {
+        return LLVMBuildRet(
+          builder,
+          LLVMBuildLoad2(builder, llvmType(type), LLVMGetOperand(value, 1), "")
+        );
       }
 
       return LLVMBuildRet(builder, value);
@@ -709,17 +770,21 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     env.getParent().put(stmt.name.literal(), function);
     functionTypeRegistry.getParent().put(function, functionType);
 
+    currentBlock = LLVMAppendBasicBlockInContext(context, function, "entry");
+    builder = LLVMCreateBuilderInContext(context);
+    LLVMPositionBuilderAtEnd(builder, currentBlock);
+
     for (int i = 0; i < stmt.parameters.size(); i++) {
       String name = stmt.parameters.get(i).name.token.literal();
 
       var param = LLVMGetParam(function, i);
       LLVMSetValueName2(param, name, name.length());
-      env.put(name, param);
-    }
 
-    currentBlock = LLVMAppendBasicBlockInContext(context, function, "entry");
-    builder = LLVMCreateBuilderInContext(context);
-    LLVMPositionBuilderAtEnd(builder, currentBlock);
+      LLVMValueRef paramAllocation = LLVMBuildAlloca(builder, LLVMTypeOf(param), name + ".addr");
+      LLVMBuildStore(builder, param, paramAllocation);
+
+      env.put(name, paramAllocation);
+    }
 
     Boolean returns = R.get(stmt.body, "returns");
 

@@ -5,6 +5,7 @@ import norswap.uranium.Reactor;
 import norswap.uranium.Rule;
 import org.rem.enums.DeclarationKind;
 import org.rem.interfaces.IType;
+import org.rem.parser.Token;
 import org.rem.parser.TokenType;
 import org.rem.parser.ast.*;
 import org.rem.scope.DeclarationContext;
@@ -42,17 +43,17 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     scope = new RootScope(reactor);
   }
 
-  private static String arithmeticError(Expression.Binary node, Object left, Object right) {
+  private static String arithmeticError(Token op, Object left, Object right) {
     return String.format(
       "Invalid arithemetic operation %s on type %s and %s",
-      node.op.literal(), left, right
+      op.literal(), left, right
     );
   }
 
-  private static String bitwiseError(Expression.Binary node, Object left, Object right) {
+  private static String bitwiseError(Token op, Object left, Object right) {
     return String.format(
       "Invalid bitwise operation %s on type %s and %s",
-      node.op.literal(), left, right
+      op.literal(), left, right
     );
   }
 
@@ -258,20 +259,20 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 //            System.out.println("OP = "+expr.op.literal()+", Left: "+left+", Right: "+right+", Max: "+maxType);
             r.set(0, maxType);
           } else {
-            r.error(arithmeticError(expr, left, right), expr);
+            r.error(arithmeticError(expr.op, left, right), expr);
           }
         } else if (expr.op.isBitwise()) {
           if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
             IType maxType = TypeUtil.max(left, right);
 
-            if (TypeUtil.max(maxType, F32Type.INSTANCE) == F32Type.INSTANCE) {
+            if (maxType.greaterOrEqual(F32Type.INSTANCE)) {
               // bitwise operations only support integers
-              r.error(bitwiseError(expr, left, right), expr);
+              r.error(bitwiseError(expr.op, left, right), expr);
             }
 
             r.set(0, maxType);
           } else {
-            r.error(bitwiseError(expr, left, right), expr);
+            r.error(bitwiseError(expr.op, left, right), expr);
           }
         }
 
@@ -979,6 +980,53 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         } else {
           r.errorFor("Trying to assign to an non-lvalue expression", expr.expression);
         }
+      });
+  }
+
+  @Override
+  public void visitUpdateExpression(Expression.Update expr) {
+    visitExpression(expr.expression);
+    visitExpression(expr.value);
+
+    R.rule(expr, "type")
+      .using(expr.expression.attr("type"), expr.value.attr("type"))
+      .by(r -> {
+        IType left = r.get(0);
+        IType right = r.get(1);
+
+        // TODO: Handle string concatenation
+
+        if (expr.op.isArithemetic()) {
+
+          if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
+
+            if(left != right) {
+              if(expr.op.type() == TokenType.FLOOR) {
+                if(TypeUtil.isFloatType(left)) {
+                  r.errorFor("Operation prohibited as it will alter type of expression", expr.value);
+                }
+              }
+
+              R.rule(expr.value, "cast")
+                .using(expr.expression, "type")
+                .by(Rule::copyFirst);
+            }
+          } else {
+            r.error(arithmeticError(expr.op, left, right), expr);
+          }
+        } else if (expr.op.isBitwise()) {
+          if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
+            if (left.greaterOrEqual(F32Type.INSTANCE)) {
+              // bitwise operations only support integers
+              r.error(bitwiseError(expr.op, left, right), expr);
+            }
+          } else {
+            r.error(bitwiseError(expr.op, left, right), expr);
+          }
+        }
+
+        // TODO: Handle operator overloading.
+        r.set(0, left);
       });
   }
 

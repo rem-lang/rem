@@ -42,6 +42,7 @@ public abstract class Expression extends AST {
     T visitParentExpression(Parent expression);
     T visitSelfExpression(Self expression);
     T visitAssignExpression(Assign expression);
+    T visitUpdateExpression(Update expression);
     T visitAnonymousExpression(Anonymous expression);
     T visitExpression(Expression expression);
   }
@@ -76,6 +77,7 @@ public abstract class Expression extends AST {
     void visitParentExpression(Parent expression);
     void visitSelfExpression(Self expression);
     void visitAssignExpression(Assign expression);
+    void visitUpdateExpression(Update expression);
     void visitAnonymousExpression(Anonymous expression);
     void visitExpression(Expression expression);
   }
@@ -664,6 +666,30 @@ public abstract class Expression extends AST {
 
     @Override public String astName() {
       return "assign expression";
+    }
+  }
+
+  public static class Update extends Expression {
+    public final Expression expression;
+    public final Token op;
+    public final Expression value;
+
+    public Update(Expression expression, Token op, Expression value) {
+      this.expression = expression;
+      this.op = op;
+      this.value = value;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitUpdateExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitUpdateExpression(this);
+    }
+
+    @Override public String astName() {
+      return "update expression";
     }
   }
 
