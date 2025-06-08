@@ -37,57 +37,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     return new LLVMGenerator();
   }
 
-  public LLVMModuleRef getModule() {
-    return module;
-  }
-
-  private LLVMTypeRef llvmType(LLVMContextRef context, IType type) {
-    return switch (type.type()) {
-      case VOID -> LLVMVoidTypeInContext(context);
-      case BOOL -> LLVMInt1TypeInContext(context);
-      case I8 -> LLVMInt8TypeInContext(context);
-      case I16 -> LLVMInt16TypeInContext(context);
-      case I32 -> LLVMInt32TypeInContext(context);
-      case I64 -> LLVMInt64TypeInContext(context);
-      case I128 -> LLVMInt128TypeInContext(context);
-      case F32 -> LLVMFloatTypeInContext(context);
-      case F64 -> LLVMDoubleTypeInContext(context);
-      case F128 -> LLVMFP128TypeInContext(context);
-      case ARRAY -> {
-        ArrayType vecType = (ArrayType) type;
-        yield LLVMArrayType2(llvmType(context, vecType.getType()), vecType.getLength());
-      }
-      case DEF -> {
-        DefType defType = (DefType) type;
-        IType[] parameters = defType.getParameterTypes();
-        IType returnType = defType.getReturnType();
-
-        try (PointerPointer<LLVMTypeRef> paramsPointer = new PointerPointer<>()) {
-          for (IType param : parameters) {
-            paramsPointer.put(llvmType(context, param));
-          }
-
-          yield LLVMFunctionType(
-            llvmType(context, returnType),
-            paramsPointer,
-            parameters.length,
-            defType.isVariadic() ? 1 : 0
-          );
-        }
-      }
-      // TODO: Handle classes here...
-//      case CLASS -> {
-//        ClassType classType = (ClassType) type;
-//
-//
-//      }
-      default -> LLVMVoidType();
-    };
-  }
-
-  private LLVMTypeRef llvmType(IType type) {
-    return llvmType(context, type);
-  }
+  //region [Expressions]
 
   @Override
   public LLVMValueRef visitExpression(Expression expression) {
@@ -314,7 +264,8 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
     LLVMValueRef value;
     if (expr.value == null || expr.value instanceof Expression.Nil) {
-      value = LLVMGetUndef(getType(expr));
+//      value = LLVMGetUndef(getType(expr));
+      value = getDefaultValue(getIType(expr));
     } else {
       value = visitExpression(expr.value);
     }
@@ -433,6 +384,10 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 //    return super.visitCallExpression(expr);
   }
 
+  //endregion
+
+  //region [Statements]
+
   @Override
   public LLVMValueRef visitSimpleStatement(Statement.Simple statement) {
     return visitExpression(statement.expression);
@@ -459,7 +414,8 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     if (stmt.value != null && !(stmt.value instanceof Expression.Nil)) {
       value = visitExpression(stmt.value);
     } else {
-      value = LLVMGetUndef(type);
+//      value = LLVMGetUndef(type);
+      value = getDefaultValue(getIType(stmt));
     }
 
     env.put(name, allocation);
@@ -963,6 +919,82 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     return function;
   }
 
+  //endregion
+
+  //region [LLVM Helpers]
+
+  public LLVMModuleRef getModule() {
+    return module;
+  }
+
+  private LLVMTypeRef llvmType(LLVMContextRef context, IType type) {
+    return switch (type.type()) {
+      case VOID -> LLVMVoidTypeInContext(context);
+      case BOOL -> LLVMInt1TypeInContext(context);
+      case I8 -> LLVMInt8TypeInContext(context);
+      case I16 -> LLVMInt16TypeInContext(context);
+      case I32 -> LLVMInt32TypeInContext(context);
+      case I64 -> LLVMInt64TypeInContext(context);
+      case I128 -> LLVMInt128TypeInContext(context);
+      case F32 -> LLVMFloatTypeInContext(context);
+      case F64 -> LLVMDoubleTypeInContext(context);
+      case F128 -> LLVMFP128TypeInContext(context);
+      case ARRAY -> {
+        ArrayType vecType = (ArrayType) type;
+        yield LLVMArrayType2(llvmType(context, vecType.getType()), vecType.getLength());
+      }
+      case DEF -> {
+        DefType defType = (DefType) type;
+        IType[] parameters = defType.getParameterTypes();
+        IType returnType = defType.getReturnType();
+
+        try (PointerPointer<LLVMTypeRef> paramsPointer = new PointerPointer<>()) {
+          for (IType param : parameters) {
+            paramsPointer.put(llvmType(context, param));
+          }
+
+          yield LLVMFunctionType(
+            llvmType(context, returnType),
+            paramsPointer,
+            parameters.length,
+            defType.isVariadic() ? 1 : 0
+          );
+        }
+      }
+      // TODO: Handle classes here...
+//      case CLASS -> {
+//        ClassType classType = (ClassType) type;
+//
+//
+//      }
+      default -> LLVMVoidType();
+    };
+  }
+
+  private LLVMValueRef getDefaultValue(IType type, LLVMTypeRef iType) {
+    return switch (type.type()) {
+      case BOOL, I8, I16, I32, I64, I128 -> LLVMConstInt(iType, 0, 0);
+      case F32, F64, F128 -> LLVMConstReal(iType, 0);
+      case ARRAY, DEF -> LLVMBuildAlloca(builder, llvmType(type), "");
+//      case DEF -> LLVMBuildAlloca(builder, llvmType(type), "");
+      // TODO: Handle map and classes here...
+//      case CLASS -> {
+//        ClassType classType = (ClassType) type;
+//
+//
+//      }
+      default -> null;
+    };
+  }
+
+  private LLVMValueRef getDefaultValue(IType type) {
+    return getDefaultValue(type, llvmType(type));
+  }
+
+  private LLVMTypeRef llvmType(IType type) {
+    return llvmType(context, type);
+  }
+
   private LLVMValueRef castNumberToType(LLVMValueRef value, IType currentType, IType targetType) {
     if (currentType == targetType) {
       return value;
@@ -1058,6 +1090,10 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     return llvmType(context, R.get(item, "value"));
   }
 
+  //endregion
+
+  //region [Generic Helpers]
+
   private <T> IType getIType(T item) {
     return R.get(item, "type");
   }
@@ -1065,4 +1101,6 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   private <T> IType getITypeValue(T item) {
     return R.get(item, "value");
   }
+
+  //endregion
 }

@@ -30,6 +30,7 @@ public record MappedType(IType keyType, IType valueType) implements IType {
   @Override
   public boolean isAssignableFrom(IType type) {
     if (type instanceof MappedType(IType rKeyType, IType rValueType)) {
+      if(rKeyType == NilType.INSTANCE) return false; // map keys are not assignable from nil
       return keyType.isAssignableFrom(rKeyType) && valueType.isAssignableFrom(rValueType);
     }
     return false;

@@ -18,7 +18,7 @@ public final class F128Type implements IType {
 
   @Override
   public boolean isAssignableFrom(IType type) {
-    return isAssignableTo(type);
+    return isAssignableTo(type) || type == NilType.INSTANCE;
   }
 
   @Override

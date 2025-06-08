@@ -43,6 +43,8 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     scope = new RootScope(reactor);
   }
 
+  //region [General Helpers]
+
   private static String arithmeticError(Token op, Object left, Object right) {
     return String.format(
       "Invalid arithemetic operation %s on type %s and %s",
@@ -82,18 +84,26 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       return null;
   }
 
-  private static boolean isTypeDeclaration(AST declaration) {
-    if (declaration instanceof Statement.Class) return true;
+  private static boolean isNotTypeDeclaration(AST declaration) {
+    if (declaration instanceof Statement.Class) return false;
 
-    if (!(declaration instanceof BuiltInTypeNode typeNode)) return false;
-    return typeNode.kind() == DeclarationKind.TYPE;
+    if (!(declaration instanceof BuiltInTypeNode typeNode)) return true;
+    return typeNode.kind() != DeclarationKind.TYPE;
   }
+
+  //endregion
+
+  //region [Analyze]
 
   public void analyze(List<Statement> statements) {
     for (Statement statement : statements) {
       statement.accept(this);
     }
   }
+
+  //endregion
+
+  //region [Expression]
 
   @Override
   public void visitNilExpression(Expression.Nil expr) {
@@ -1045,6 +1055,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     expression.accept(this);
   }
 
+  //endregion
+
+  //region [Statement]
+
   @Override
   public void visitEchoStatement(Statement.Echo stmt) {
     visitExpression(stmt.value);
@@ -1399,7 +1413,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         IType expected = r.get(0);
         IType actual = r.get(1);
 
-        if (!actual.isAssignableTo(expected)) {
+        if (!expected.isAssignableFrom(actual)) {
 
           if (TypeUtil.isArray(expected) && TypeUtil.isArray(actual)) {
             IType expectedElem = ((ArrayType) expected).getType();
@@ -1609,7 +1623,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             stmt.superclass,
             stmt.superclass.attr("value")
           ));
-      } else if (!isTypeDeclaration(ast)) {
+      } else if (isNotTypeDeclaration(ast)) {
         R.rule()
           .by(r -> r.errorFor(
             String.format(
@@ -1671,6 +1685,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     statement.accept(this);
   }
 
+  //endregion
+
+  //region [Types]
+
   @Override
   public void visitVoidTyped(Typed.Void typed) {
     R.set(typed, "value", VoidType.INSTANCE);
@@ -1692,7 +1710,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             typed,
             typed.attr("value")
           );
-        } else if (!isTypeDeclaration(ast)) {
+        } else if (isNotTypeDeclaration(ast)) {
           r.errorFor(
             String.format(
               "%s did not resolve to a type declaration but to a %s",
@@ -1751,6 +1769,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     typed.accept(this);
   }
 
+  //endregion
+
+  //region [Semantic helpers]
+
   private boolean isReturnContainer(AST node) {
     // TODO: Determine if raise and assert nodes should be return containers
     return node instanceof Statement.Block
@@ -1795,4 +1817,6 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
     return null;
   }
+
+  //endregion
 }

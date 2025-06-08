@@ -50,7 +50,7 @@ public final class ClassType implements IType {
 
   @Override
   public boolean isAssignableFrom(IType type) {
-    if(type == this) return true;
+    if(type == this || type == NilType.INSTANCE) return true;
     if(!(type instanceof ClassType classType)) return false;
 
     // check the same class

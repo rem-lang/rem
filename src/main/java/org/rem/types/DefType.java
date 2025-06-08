@@ -85,7 +85,7 @@ public final class DefType implements IType {
 
   @Override
   public boolean isAssignableFrom(IType type) {
-    return isAssignableTo(type);
+    return isAssignableTo(type) || type == NilType.INSTANCE;
   }
 
   public int getParameterCount() {
