@@ -18,7 +18,7 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
   private static final BytePointer error = new BytePointer();
 
   @Override
-  public int generate(CompileResult<LLVMValueRef> result) {
+  public int generate(CompileResult<LLVMValueRef> result, String outputName) {
     if(result.getTarget() instanceof LLVMCompileTarget llvmTarget) {
        final var error = new BytePointer();
 
@@ -33,7 +33,7 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
       var target = new LLVMTargetRef();
       LLVMGetTargetFromTriple(LLVMGetDefaultTargetTriple(), target, error);
       if(!error.isNull()) {
-        System.err.printf("error: %s\n", error);
+        System.err.printf("error: %s\n", error.getString());
       }
       LLVMDisposeMessage(error);
 
@@ -41,21 +41,23 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
 
       LLVMSetTarget(llvmTarget.getModule(), LLVMGetDefaultTargetTriple());
       var dataLayout = LLVMCreateTargetDataLayout(machine);
-      var datalayoutStr = LLVMCopyStringRepOfTargetData(dataLayout);
+      var dataLayoutStr = LLVMCopyStringRepOfTargetData(dataLayout);
 
       if(!error.isNull()) {
-        System.err.printf("error: %s\n", error);
+        System.err.printf("error: %s\n", error.getString());
       }
-      LLVMSetDataLayout(llvmTarget.getModule(), datalayoutStr);
-      LLVMDisposeMessage(datalayoutStr);
+      LLVMSetDataLayout(llvmTarget.getModule(), dataLayoutStr);
+      LLVMDisposeMessage(dataLayoutStr);
 
-      LLVMTargetMachineEmitToFile(machine, llvmTarget.getModule(), "build/result.o", LLVMObjectFile, error);
+      var objectFile = outputName+".o";
+
+      LLVMTargetMachineEmitToFile(machine, llvmTarget.getModule(), objectFile, LLVMObjectFile, error);
       if(!error.isNull()) {
-        System.err.printf("error: %s\n", error);
+        System.err.printf("error: %s\n", error.getString());
       }
       LLVMDisposeMessage(error);
 
-      return linkToExe("build/result.o", "build/result");
+      return linkToExe(objectFile, outputName);
 
     }
     return 0;

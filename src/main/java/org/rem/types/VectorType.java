@@ -4,17 +4,17 @@ import org.jspecify.annotations.NonNull;
 import org.rem.enums.TypeEnum;
 import org.rem.interfaces.IType;
 
-public final class ArrayType implements IType {
+public final class VectorType implements IType {
 
   private IType type;
-  private long length;
+  private int length;
 
-  public ArrayType(IType type, long length) {
+  public VectorType(IType type, int length) {
     this.type = type;
     this.length = length;
   }
 
-  public ArrayType(IType type) {
+  public VectorType(IType type) {
     this(type, 0);
   }
 
@@ -22,22 +22,22 @@ public final class ArrayType implements IType {
     return type;
   }
 
-  public long getLength() {
+  public int getLength() {
     return length;
   }
 
-  public void setLength(long length) {
+  public void setLength(int length) {
     this.length = length;
   }
 
   @Override
   public TypeEnum type() {
-    return TypeEnum.ARRAY;
+    return TypeEnum.VECTOR;
   }
 
   @Override
   public @NonNull String name() {
-    return "["+ length +"]" + type.name();
+    return "[]" + type.name();
   }
 
   @Override
@@ -52,7 +52,7 @@ public final class ArrayType implements IType {
 
   @Override
   public boolean isAssignableTo(IType type) {
-    return type.type() == TypeEnum.ARRAY && ((ArrayType) type).getType().isAssignableFrom(this.type);
+    return type.type() == TypeEnum.VECTOR && ((VectorType) type).getType().isAssignableFrom(this.type);
   }
 
   @Override

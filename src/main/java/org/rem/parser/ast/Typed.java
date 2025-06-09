@@ -17,6 +17,7 @@ public abstract class Typed extends AST {
     T visitVoidTyped(Void typed);
     T visitIdTyped(Id typed);
     T visitArrayTyped(Array typed);
+    T visitVectorTyped(Vector typed);
     T visitMapTyped(Map typed);
     T visitTyped(Typed typed);
   }
@@ -26,6 +27,7 @@ public abstract class Typed extends AST {
     void visitVoidTyped(Void typed);
     void visitIdTyped(Id typed);
     void visitArrayTyped(Array typed);
+    void visitVectorTyped(Vector typed);
     void visitMapTyped(Map typed);
     void visitTyped(Typed typed);
   }
@@ -69,9 +71,11 @@ public abstract class Typed extends AST {
 
   public static class Array extends Typed {
     public final Typed type;
+    public final int size;
 
-    public Array(Typed type) {
+    public Array(Typed type, int size) {
       this.type = type;
+      this.size = size;
     }
 
     public <T> T accept(Visitor<T> visitor) {
@@ -84,6 +88,26 @@ public abstract class Typed extends AST {
 
     @Override public String astName() {
       return "array typed";
+    }
+  }
+
+  public static class Vector extends Typed {
+    public final Typed type;
+
+    public Vector(Typed type) {
+      this.type = type;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitVectorTyped(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitVectorTyped(this);
+    }
+
+    @Override public String astName() {
+      return "vector typed";
     }
   }
 

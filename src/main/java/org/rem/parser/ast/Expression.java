@@ -29,20 +29,20 @@ public abstract class Expression extends AST {
     T visitIncrementExpression(Increment expression);
     T visitDecrementExpression(Decrement expression);
     T visitIdentifierExpression(Identifier expression);
+    T visitArrayExpression(Array expression);
     T visitTypedNameExpression(TypedName expression);
+    T visitAssignExpression(Assign expression);
+    T visitUpdateExpression(Update expression);
     T visitConditionExpression(Condition expression);
     T visitCallExpression(Call expression);
     T visitGetExpression(Get expression);
     T visitSetExpression(Set expression);
     T visitIndexExpression(Index expression);
     T visitSliceExpression(Slice expression);
-    T visitArrayExpression(Array expression);
     T visitDictExpression(Dict expression);
     T visitNewExpression(New expression);
     T visitParentExpression(Parent expression);
     T visitSelfExpression(Self expression);
-    T visitAssignExpression(Assign expression);
-    T visitUpdateExpression(Update expression);
     T visitAnonymousExpression(Anonymous expression);
     T visitExpression(Expression expression);
   }
@@ -64,20 +64,20 @@ public abstract class Expression extends AST {
     void visitIncrementExpression(Increment expression);
     void visitDecrementExpression(Decrement expression);
     void visitIdentifierExpression(Identifier expression);
+    void visitArrayExpression(Array expression);
     void visitTypedNameExpression(TypedName expression);
+    void visitAssignExpression(Assign expression);
+    void visitUpdateExpression(Update expression);
     void visitConditionExpression(Condition expression);
     void visitCallExpression(Call expression);
     void visitGetExpression(Get expression);
     void visitSetExpression(Set expression);
     void visitIndexExpression(Index expression);
     void visitSliceExpression(Slice expression);
-    void visitArrayExpression(Array expression);
     void visitDictExpression(Dict expression);
     void visitNewExpression(New expression);
     void visitParentExpression(Parent expression);
     void visitSelfExpression(Self expression);
-    void visitAssignExpression(Assign expression);
-    void visitUpdateExpression(Update expression);
     void visitAnonymousExpression(Anonymous expression);
     void visitExpression(Expression expression);
   }
@@ -391,6 +391,26 @@ public abstract class Expression extends AST {
     }
   }
 
+  public static class Array extends Expression {
+    public final List<Expression> items;
+
+    public Array(List<Expression> items) {
+      this.items = items;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitArrayExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitArrayExpression(this);
+    }
+
+    @Override public String astName() {
+      return "array expression";
+    }
+  }
+
   public static class TypedName extends Expression {
     public final Identifier name;
     public final Typed type;
@@ -410,6 +430,52 @@ public abstract class Expression extends AST {
 
     @Override public String astName() {
       return "typedname expression";
+    }
+  }
+
+  public static class Assign extends Expression {
+    public final Expression expression;
+    public final Expression value;
+
+    public Assign(Expression expression, Expression value) {
+      this.expression = expression;
+      this.value = value;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitAssignExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitAssignExpression(this);
+    }
+
+    @Override public String astName() {
+      return "assign expression";
+    }
+  }
+
+  public static class Update extends Expression {
+    public final Expression expression;
+    public final Token op;
+    public final Expression value;
+
+    public Update(Expression expression, Token op, Expression value) {
+      this.expression = expression;
+      this.op = op;
+      this.value = value;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitUpdateExpression(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitUpdateExpression(this);
+    }
+
+    @Override public String astName() {
+      return "update expression";
     }
   }
 
@@ -551,26 +617,6 @@ public abstract class Expression extends AST {
     }
   }
 
-  public static class Array extends Expression {
-    public final List<Expression> items;
-
-    public Array(List<Expression> items) {
-      this.items = items;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitArrayExpression(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitArrayExpression(this);
-    }
-
-    @Override public String astName() {
-      return "array expression";
-    }
-  }
-
   public static class Dict extends Expression {
     public final List<Expression> keys;
     public final List<Expression> values;
@@ -644,52 +690,6 @@ public abstract class Expression extends AST {
 
     @Override public String astName() {
       return "self expression";
-    }
-  }
-
-  public static class Assign extends Expression {
-    public final Expression expression;
-    public final Expression value;
-
-    public Assign(Expression expression, Expression value) {
-      this.expression = expression;
-      this.value = value;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitAssignExpression(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitAssignExpression(this);
-    }
-
-    @Override public String astName() {
-      return "assign expression";
-    }
-  }
-
-  public static class Update extends Expression {
-    public final Expression expression;
-    public final Token op;
-    public final Expression value;
-
-    public Update(Expression expression, Token op, Expression value) {
-      this.expression = expression;
-      this.op = op;
-      this.value = value;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitUpdateExpression(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitUpdateExpression(this);
-    }
-
-    @Override public String astName() {
-      return "update expression";
     }
   }
 

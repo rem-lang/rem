@@ -13,6 +13,7 @@ public enum TypeEnum {
   F64,
   F128,
   ARRAY,
+  VECTOR,
   MAPPED,
   DEF,
   CLASS,

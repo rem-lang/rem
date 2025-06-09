@@ -12,6 +12,7 @@ import org.rem.registries.CompilerRegistry;
 import org.rem.registries.GeneratorRegistry;
 import org.rem.utils.SemanticErrorUtil;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Set;
@@ -49,6 +50,13 @@ public class Compiler {
   }
 
   public  <T> int generate(CompileResult<T> result) {
-    return result.getTarget().getGenerator().generate(result);
+    String outputFileName = request.sourceFile.getName();
+    int splitPoint = outputFileName.lastIndexOf('.');
+
+    if(splitPoint > -1) {
+      outputFileName = outputFileName.substring(0, splitPoint);
+    }
+
+    return result.getTarget().getGenerator().generate(result, outputFileName);
   }
 }

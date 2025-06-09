@@ -6,7 +6,7 @@ import org.rem.nodes.Node;
 
 public class CGenerator implements IGenerator<Node> {
   @Override
-  public int generate(CompileResult<Node> result) {
+  public int generate(CompileResult<Node> result, String outputName) {
     return 0;
   }
 }

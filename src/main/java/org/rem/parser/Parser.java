@@ -158,10 +158,11 @@ public class Parser {
 
   private Typed parseType(String message, boolean mustThrow) {
     return wrap(() -> {
-      // The three possible type definitions are:
-      // 1. `[]type`
-      // 2. `[key]type`
-      // 3. `type`
+      // The four possible type definitions are:
+      // 1. `[]type`    - Vector
+      // 2. `[4]type`   - Array
+      // 3. `[key]type` - Map
+      // 4. `type`      - Class
       // These typing can be nested. E.g. `[key][]type`, [][key]type`, etc...
       // However, there are certain exceptions
       // 1. A list cannot be a key, so it's impossible to have `[[]type1]type2` and
@@ -169,6 +170,7 @@ public class Parser {
 
       if (match(LBRACKET)) {
         Expression.Identifier keyType = null;
+        Expression.Int32 size = null;
 
         if (check(IDENTIFIER)) {
           keyType = wrap(() -> {
@@ -177,14 +179,26 @@ public class Parser {
           });
 
           consume(RBRACKET, "']' expected after map type declaration");
+        } else if(check(REG_NUMBER)) {
+          size = wrap(() -> {
+            match(REG_NUMBER);
+            Expression number = parseNumber(previous().literal());
+            if(!(number instanceof Expression.Int32 int32)) {
+              throw new ParserException(lexer.getSource(), previous(), "Arrays sizes must be of type i32");
+            }
+
+            return int32;
+          });
+
+          consume(RBRACKET, "']' expected after array type declaration or key type for map type declaration");
         } else {
-          consume(RBRACKET, "']' expected after list type declaration or key type for map type declaration");
+          consume(RBRACKET, "']' expected after vector type declaration or key type for map type declaration");
         }
 
         Typed valueType = parseType("invalid type specified", true);
 
         if (keyType == null) {
-          return new Typed.Array(valueType);
+          return size == null ? new Typed.Vector(valueType) : new Typed.Array(valueType, size.value);
         } else {
           return new Typed.Map(new Typed.Id(keyType), valueType);
         }

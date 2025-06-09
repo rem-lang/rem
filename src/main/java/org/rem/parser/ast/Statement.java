@@ -28,14 +28,14 @@ public abstract class Statement extends AST {
     T visitUsingStatement(Using statement);
     T visitImportStatement(Import statement);
     T visitCatchStatement(Catch statement);
-    T visitBlockStatement(Block statement);
     T visitVarStatement(Var statement);
+    T visitVarListStatement(VarList statement);
+    T visitBlockStatement(Block statement);
     T visitExternStatement(Extern statement);
     T visitFunctionStatement(Function statement);
     T visitMethodStatement(Method statement);
     T visitPropertyStatement(Property statement);
     T visitClassStatement(Class statement);
-    T visitVarListStatement(VarList statement);
     T visitStatement(Statement statement);
   }
 
@@ -55,14 +55,14 @@ public abstract class Statement extends AST {
     void visitUsingStatement(Using statement);
     void visitImportStatement(Import statement);
     void visitCatchStatement(Catch statement);
-    void visitBlockStatement(Block statement);
     void visitVarStatement(Var statement);
+    void visitVarListStatement(VarList statement);
+    void visitBlockStatement(Block statement);
     void visitExternStatement(Extern statement);
     void visitFunctionStatement(Function statement);
     void visitMethodStatement(Method statement);
     void visitPropertyStatement(Property statement);
     void visitClassStatement(Class statement);
-    void visitVarListStatement(VarList statement);
     void visitStatement(Statement statement);
   }
 
@@ -381,26 +381,6 @@ public abstract class Statement extends AST {
     }
   }
 
-  public static class Block extends Statement {
-    public final List<Statement> body;
-
-    public Block(List<Statement> body) {
-      this.body = body;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitBlockStatement(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitBlockStatement(this);
-    }
-
-    @Override public String astName() {
-      return "block statement";
-    }
-  }
-
   public static class Var extends Statement {
     public final Expression.TypedName typedName;
     public final Expression value;
@@ -422,6 +402,46 @@ public abstract class Statement extends AST {
 
     @Override public String astName() {
       return "var statement";
+    }
+  }
+
+  public static class VarList extends Statement {
+    public final List<Statement> declarations;
+
+    public VarList(List<Statement> declarations) {
+      this.declarations = declarations;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitVarListStatement(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitVarListStatement(this);
+    }
+
+    @Override public String astName() {
+      return "varlist statement";
+    }
+  }
+
+  public static class Block extends Statement {
+    public final List<Statement> body;
+
+    public Block(List<Statement> body) {
+      this.body = body;
+    }
+
+    public <T> T accept(Visitor<T> visitor) {
+      return visitor.visitBlockStatement(this);
+    }
+
+    public void accept(VoidVisitor visitor) {
+      visitor.visitBlockStatement(this);
+    }
+
+    @Override public String astName() {
+      return "block statement";
     }
   }
 
@@ -560,26 +580,6 @@ public abstract class Statement extends AST {
 
     @Override public String astName() {
       return "class statement";
-    }
-  }
-
-  public static class VarList extends Statement {
-    public final List<Statement> declarations;
-
-    public VarList(List<Statement> declarations) {
-      this.declarations = declarations;
-    }
-
-    public <T> T accept(Visitor<T> visitor) {
-      return visitor.visitVarListStatement(this);
-    }
-
-    public void accept(VoidVisitor visitor) {
-      visitor.visitVarListStatement(this);
-    }
-
-    @Override public String astName() {
-      return "varlist statement";
     }
   }
 }

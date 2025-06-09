@@ -37,7 +37,8 @@ public class GenerateAst {
   private static final List<String> TYPE_DEFINITION = Arrays.asList(
     "Void             :",
     "Id               : Expression.Identifier name",
-    "Array            : Typed type",
+    "Array            : Typed type, int size",
+    "Vector           : Typed type",
     "Map              : Typed keyType, Typed valueType"
   );
 

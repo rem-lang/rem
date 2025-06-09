@@ -536,7 +536,15 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             // ensure correct casting
             R.rule(expr.args.get(i), "cast")
               .using(expr.args.get(i), "type")
-              .by(r1 -> r1.set(0, argType));
+              .by(r1 -> {
+                if(argType instanceof ArrayType argArray && paramType instanceof ArrayType paramArray) {
+                  if(paramArray.getLength() == 0) {
+                    paramArray.setLength(argArray.getLength());
+                  }
+                }
+
+                r1.set(0, argType);
+              });
           }
         }
       });
@@ -1765,7 +1773,28 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           r.errorFor("Arrays cannot be of void type", typed.type);
         }
 
-        r.set(0, new ArrayType(type));
+        if(typed.size < 1) {
+          r.errorFor("Array sizes must be greater than or equal to 1", typed);
+        }
+
+        r.set(0, new ArrayType(type, typed.size));
+      });
+  }
+
+  @Override
+  public void visitVectorTyped(Typed.Vector typed) {
+    visitTyped(typed.type);
+
+    R.rule(typed, "value")
+      .using(typed.type, "value")
+      .by(r -> {
+        IType type = r.get(0);
+
+        if (type == VoidType.INSTANCE) {
+          r.errorFor("Vectors cannot be of void type", typed.type);
+        }
+
+        r.set(0, new VectorType(type));
       });
   }
 

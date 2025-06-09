@@ -144,6 +144,11 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
   }
 
   @Override
+  public T visitUpdateExpression(Expression.Update expression) {
+    return null;
+  }
+
+  @Override
   public T visitAnonymousExpression(Expression.Anonymous expr) {
     return null;
   }
@@ -279,6 +284,11 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
   }
 
   @Override
+  public T visitVectorTyped(Typed.Vector typed) {
+    return null;
+  }
+
+  @Override
   public T visitMapTyped(Typed.Map typed) {
     return null;
   }
@@ -300,11 +310,6 @@ public abstract class BaseCompileTarget<T> implements ICompileTarget<T> {
 
   @Override
   public T visitIncrementExpression(Expression.Increment expression) {
-    return null;
-  }
-
-  @Override
-  public T visitUpdateExpression(Expression.Update expression) {
     return null;
   }
 }
