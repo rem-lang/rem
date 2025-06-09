@@ -6,7 +6,7 @@ import org.rem.interfaces.IType;
 
 public final class ArrayType implements IType {
 
-  private final IType type;
+  private IType type;
   private long length;
 
   public ArrayType(IType type, long length) {
@@ -58,5 +58,9 @@ public final class ArrayType implements IType {
   @Override
   public boolean isAssignableFrom(IType type) {
     return isAssignableTo(type) || type == NilType.INSTANCE;
+  }
+
+  public void setType(IType type) {
+    this.type = type;
   }
 }

@@ -7,4 +7,14 @@ def main() {
   for var i = 0; i < 3; i++ {
     putchar(48 + a[i])
   }
+
+  var b = 10
+  var c = 20
+  var d = 25
+
+  var e: []i8 = [b, c, d]
+
+  for var i = 0; i < 3; i++ {
+    putchar(64 + e[i])
+  }
 }

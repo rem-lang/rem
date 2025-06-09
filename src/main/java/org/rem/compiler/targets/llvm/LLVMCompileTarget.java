@@ -168,6 +168,19 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
         yield LLVMBuildUDiv(builder, lValue, rValue, "");
       }
+      case PERCENT -> {
+        if (TypeUtil.isFloatType(maxType)) {
+          yield LLVMBuildFRem(builder, lValue, rValue, "");
+        }
+
+        yield LLVMBuildSRem(builder, lValue, rValue, "");
+      }
+      case LSHIFT -> LLVMBuildShl(builder, lValue, rValue, "");
+      case RSHIFT -> LLVMBuildAShr(builder, lValue, rValue, "");
+      case URSHIFT -> LLVMBuildLShr(builder, lValue, rValue, "");
+      case AMP -> LLVMBuildAnd(builder, lValue, rValue, "");
+      case BAR -> LLVMBuildOr(builder, lValue, rValue, "");
+      case XOR -> LLVMBuildXor(builder, lValue, rValue, "");
       default -> throw new RuntimeException("");
     };
   }
@@ -435,28 +448,38 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   private LLVMValueRef visitArray(Expression.Array expr, LLVMTypeRef type, LLVMValueRef allocation) {
     var size = expr.items.size();
+    ArrayType arrayType = R.get(expr, "type");
 
     if(size > 0) {
 
-      LLVMValueRef[] values = new LLVMValueRef[size - 1];
-      for(int i = 1; i < size; i++) {
-        values[i - 1] = visitExpression(expr.items.get(i));
+      LLVMValueRef[] values = new LLVMValueRef[size];
+      for(int i = 0; i < size; i++) {
+        var item = expr.items.get(i);
+        var value = visitExpression(item);
+
+        var ixType = getIType(item);
+        if(ixType != arrayType.getType()) {
+          value = castToType(value, ixType, arrayType.getType());
+        }
+
+        values[i] = value;
       }
 
-      LLVMBuildStore(builder, visitExpression(expr.items.getFirst()), allocation);
+      LLVMBuildStore(builder, values[0], allocation);
 
-      if(values.length > 0) {
+      if(values.length > 1) {
 
-        for(int i = 0; i < values.length; i++) {
+        for(int i = 1; i < values.length; i++) {
           var gep = LLVMBuildInBoundsGEP2(
             builder,
             LLVMTypeOf(values[i]),
             allocation,
             new PointerPointer<>(1)
-              .put(0, LLVMConstInt(LLVMInt32TypeInContext(context), i + 1, 0)),
+              .put(0, LLVMConstInt(LLVMInt32TypeInContext(context), i, 0)),
             1,
             ""
           );
+
           LLVMBuildStore(builder, values[i], gep);
         }
       }
@@ -1189,7 +1212,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
       }
     } else if (TypeUtil.isIntegerType(currentType) && TypeUtil.isIntegerType(targetType)) {
       if (currentType.less(targetType)) {
-        return LLVMBuildSExtOrBitCast(builder, value, llvmType(targetType), "");
+        return LLVMBuildZExtOrBitCast(builder, value, llvmType(targetType), "");
       } else {
         return LLVMBuildTrunc(builder, value, llvmType(targetType), "");
       }
@@ -1198,6 +1221,16 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     return TypeUtil.isIntegerType(currentType)
       ? LLVMBuildSIToFP(builder, value, llvmType(targetType), "")
       : LLVMBuildFPToSI(builder, value, llvmType(targetType), "");
+  }
+
+  private LLVMValueRef castToType(LLVMValueRef value, IType currentType, IType targetType) {
+    if(TypeUtil.isNumericType(targetType)) {
+      return castNumberToType(value, currentType, targetType);
+    }
+
+    // TODO: Handle other type
+
+    return value;
   }
 
   private void emitBlock(LLVMBasicBlockRef block) {

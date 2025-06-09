@@ -1476,6 +1476,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           if (expectedArrayType.getLength() == 0 && actualArrayType1.getLength() > 0) {
             expectedArrayType.setLength(actualArrayType1.getLength());
           }
+
+          if(expectedArrayType.getType() != actualArrayType1.getType()) {
+            actualArrayType1.setType(expectedArrayType.getType());
+          }
         }
       });
   }
