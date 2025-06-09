@@ -686,7 +686,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType type = r.get(0);
 
-        // TODO: Handle non integer indexing on dictionary maps
+        // TODO: Handle non integer indexing on maps
 
         if (!TypeUtil.isIntegerType(type))
           r.error("Indexing an array using a value that's not assignable to `i32`", expr.argument);
@@ -696,10 +696,26 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .using(expr.callee, "type")
       .by(r -> {
         IType type = r.get(0);
-        if (type instanceof ArrayType)
-          r.set(0, ((ArrayType) type).getType());
-        else
+
+        // TODO: Handle maps
+
+        if (type instanceof ArrayType arrayType) {
+          if(arrayType.getLength() == 0) {
+            r.errorFor("Cannot index empty array or array of unknown length", expr.callee);
+          } else if(expr.argument instanceof Expression.Int32 int32) {
+            if(int32.value < 0 || int32.value > arrayType.getLength() - 1) {
+              r.errorFor("Array index out of range", expr.argument);
+            }
+          } else if(expr.argument instanceof Expression.Int64 int64) {
+            if(int64.value < 0 || int64.value > arrayType.getLength() - 1) {
+              r.errorFor("Array index out of range", expr.argument);
+            }
+          }
+
+          r.set(0, arrayType.getType());
+        } else {
           r.error("Trying to index a non-array expression of type " + type, expr);
+        }
       });
   }
 
@@ -721,7 +737,12 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     if (expr.items.isEmpty()) {
       final AST context = this.inferenceContext;
 
-      if (context instanceof Statement.Var) {
+      if (context instanceof Statement.Var varStmt) {
+        if(varStmt.typedName.type == null) {
+          R.rule()
+            .by(r -> r.errorFor("Cannot assign empty array to untyped variable", expr));
+        }
+
         R.rule(expr, "type")
           .using(context, "type")
           .by(Rule::copyFirst);

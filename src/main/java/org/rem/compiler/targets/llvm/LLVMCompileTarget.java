@@ -15,6 +15,9 @@ import org.rem.scope.Environment;
 import org.rem.types.*;
 import org.rem.utils.TypeUtil;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.bytedeco.llvm.global.LLVM.*;
 
 @SuppressWarnings("resource")
@@ -26,6 +29,8 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   private LLVMValueRef currentFunction;
   private Environment<String, LLVMValueRef> env = new Environment<>(null);
   private Environment<LLVMValueRef, LLVMTypeRef> functionTypeRegistry = new Environment<>(null);
+
+  private final Map<IType, LLVMTypeRef> createdTypesCache = new HashMap<>();
 
   public LLVMCompileTarget(Reactor reactor) {
     super(reactor);
@@ -58,7 +63,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   @Override
   public LLVMValueRef visitInt32Expression(Expression.Int32 expr) {
-    return LLVMConstInt(llvmType(context, I32Type.INSTANCE), expr.value, expr.value < 0 ? 1 : 0);
+    return LLVMConstInt(getType(expr), expr.value, expr.value < 0 ? 1 : 0);
   }
 
   @Override
@@ -80,7 +85,13 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   public LLVMValueRef visitUnaryExpression(Expression.Unary expr) {
     var iType = getIType(expr);
 
-    var value = LLVMBuildBitCast(builder, visitExpression(expr.right), getType(expr), "");
+    var iValue = visitExpression(expr.right);
+
+    if(LLVMIsAGetElementPtrInst(iValue) != null) {
+      iValue = LLVMBuildLoad2(builder, getType(expr.right), iValue, "");
+    }
+
+    var value = LLVMBuildBitCast(builder, iValue, getType(expr), "");
 
     return switch (expr.op.type()) {
       case MINUS -> {
@@ -102,6 +113,14 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
     var lValue = visitExpression(expr.left);
     var rValue = visitExpression(expr.right);
+
+    if(LLVMIsAGetElementPtrInst(lValue) != null) {
+      lValue = LLVMBuildLoad2(builder, llvmType(l_IType), lValue, "");
+    }
+
+    if(LLVMIsAGetElementPtrInst(rValue) != null) {
+      rValue = LLVMBuildLoad2(builder, llvmType(r_IType), rValue, "");
+    }
 
     IType lCastType = TypeUtil.max(r_IType, R.get(expr.left, "cast"));
     IType rCastType = TypeUtil.max(R.get(expr.right, "cast"), lCastType);
@@ -206,6 +225,14 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     var lValue = visitExpression(expr.left);
     var rValue = visitExpression(expr.right);
 
+    if(LLVMIsAGetElementPtrInst(lValue) != null) {
+      lValue = LLVMBuildLoad2(builder, llvmType(l_IType), lValue, "");
+    }
+
+    if(LLVMIsAGetElementPtrInst(rValue) != null) {
+      rValue = LLVMBuildLoad2(builder, llvmType(r_IType), rValue, "");
+    }
+
     // TODO: Handle other types equality and non-equality.
 
     var maxType = TypeUtil.max(l_IType, r_IType);
@@ -287,7 +314,7 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
       throw new RuntimeException("We should never get here.");
     }
 
-    if (LLVMIsAAllocaInst(value) != null) {
+    if (LLVMIsAAllocaInst(value) != null && LLVMIsALoadInst(value) == null) {
       return LLVMBuildLoad2(builder, LLVMGetAllocatedType(value), value, "");
     }
 
@@ -346,7 +373,11 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     }
 
     var expression = visitExpression(expr.expression);
-    return LLVMBuildStore(builder, value, LLVMGetOperand(expression, 0));
+    if(LLVMIsALoadInst(expression) != null || LLVMIsAStoreInst(expression) != null) {
+      expression = LLVMGetOperand(expression, 0);
+    }
+
+    return LLVMBuildStore(builder, value, expression);
   }
 
   @Override
@@ -400,6 +431,86 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
     LLVMBuildStore(builder, vValue, LLVMGetOperand(iValue, 0));
     return vValue;
+  }
+
+  private LLVMValueRef visitArray(Expression.Array expr, LLVMTypeRef type, LLVMValueRef allocation) {
+    var size = expr.items.size();
+
+    if(size > 0) {
+
+      LLVMValueRef[] values = new LLVMValueRef[size - 1];
+      for(int i = 1; i < size; i++) {
+        values[i - 1] = visitExpression(expr.items.get(i));
+      }
+
+      LLVMBuildStore(builder, visitExpression(expr.items.getFirst()), allocation);
+
+      if(values.length > 0) {
+
+        for(int i = 0; i < values.length; i++) {
+          var gep = LLVMBuildInBoundsGEP2(
+            builder,
+            LLVMTypeOf(values[i]),
+            allocation,
+            new PointerPointer<>(1)
+              .put(0, LLVMConstInt(LLVMInt32TypeInContext(context), i + 1, 0)),
+            1,
+            ""
+          );
+          LLVMBuildStore(builder, values[i], gep);
+        }
+      }
+    }
+
+    return allocation;
+  }
+
+  @Override
+  public LLVMValueRef visitArrayExpression(Expression.Array expr) {
+
+    var type = getType(expr);
+    var arrayAllocation = LLVMBuildAlloca(builder, type, "array");
+
+    return visitArray(expr, type, arrayAllocation);
+  }
+
+  @Override
+  public LLVMValueRef visitIndexExpression(Expression.Index expr) {
+    var array = visitExpression(expr.callee);
+
+    var iType = getIType(expr.argument);
+
+    if(TypeUtil.isIntegerType(iType)) {
+        var cType = getIType(expr.callee);
+        assert cType instanceof ArrayType;
+
+        ArrayType arrayType = (ArrayType) cType;
+        var argType = getType(expr.argument);
+
+        var pointer = new PointerPointer<>(2)
+          .put(0, LLVMConstInt(LLVMInt32TypeInContext(context), 0, 0));
+
+        if(expr.argument instanceof Expression.Int32 int32) {
+          pointer.put(1, visitInt32Expression(int32));
+        } else if(expr.argument instanceof Expression.Int64 int64) {
+          pointer.put(1, visitInt64Expression(int64));
+        } else {
+          var argument = visitExpression(expr.argument);
+          if(LLVMIsAAllocaInst(argument) != null || LLVMIsAGetElementPtrInst(argument) != null) {
+            argument = LLVMBuildLoad2(builder, argType, argument, "");
+          }
+          pointer.put(1, argument);
+        }
+
+        if(LLVMIsALoadInst(array) != null) {
+          array = LLVMGetOperand(array, 0);
+          assert LLVMIsAConstantArray(array) != null;
+        }
+
+        return LLVMBuildInBoundsGEP2(builder, llvmType(cType), array, pointer, 2, "");
+    }
+
+    return super.visitIndexExpression(expr);
   }
 
   //endregion
@@ -839,16 +950,21 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
     String name = stmt.typedName.name.token.literal();
 
     var allocation = LLVMBuildAlloca(builder, type, name);
+    env.put(name, allocation);
+
     LLVMValueRef value;
 
     if (stmt.value != null && !(stmt.value instanceof Expression.Nil)) {
+      if(stmt.value instanceof Expression.Array array) {
+        return visitArray(array, type, allocation);
+      }
+
       value = visitExpression(stmt.value);
     } else {
 //      value = LLVMGetUndef(type);
       value = getDefaultValue(getIType(stmt));
     }
 
-    env.put(name, allocation);
     return LLVMBuildStore(builder, value, allocation);
   }
 
@@ -980,7 +1096,11 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
   }
 
   private LLVMTypeRef llvmType(LLVMContextRef context, IType type) {
-    return switch (type.type()) {
+    if(createdTypesCache.containsKey(type)) {
+      return createdTypesCache.get(type);
+    }
+
+    var value = switch (type.type()) {
       case VOID -> LLVMVoidTypeInContext(context);
       case BOOL -> LLVMInt1TypeInContext(context);
       case I8 -> LLVMInt8TypeInContext(context);
@@ -1021,13 +1141,26 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 //      }
       default -> LLVMVoidType();
     };
+
+    createdTypesCache.put(type, value);
+
+    return value;
+  }
+
+  private LLVMTypeRef llvmType(IType type) {
+    return llvmType(context, type);
   }
 
   private LLVMValueRef getDefaultValue(IType type, LLVMTypeRef iType) {
     return switch (type.type()) {
       case BOOL, I8, I16, I32, I64, I128 -> LLVMConstInt(iType, 0, 0);
       case F32, F64, F128 -> LLVMConstReal(iType, 0);
-      case ARRAY, DEF -> LLVMBuildAlloca(builder, llvmType(type), "");
+      case DEF -> LLVMBuildAlloca(builder, llvmType(type), "");
+      case ARRAY -> {
+        var valType = llvmType(type);
+        var array = LLVMBuildAlloca(builder, valType, "");
+        yield LLVMBuildGEP2(builder, valType, array, new PointerPointer<>(0), 0, "");
+      }
 //      case DEF -> LLVMBuildAlloca(builder, llvmType(type), "");
       // TODO: Handle map and classes here...
 //      case CLASS -> {
@@ -1041,10 +1174,6 @@ public class LLVMCompileTarget extends BaseCompileTarget<LLVMValueRef> {
 
   private LLVMValueRef getDefaultValue(IType type) {
     return getDefaultValue(type, llvmType(type));
-  }
-
-  private LLVMTypeRef llvmType(IType type) {
-    return llvmType(context, type);
   }
 
   private LLVMValueRef castNumberToType(LLVMValueRef value, IType currentType, IType targetType) {
