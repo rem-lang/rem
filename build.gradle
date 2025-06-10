@@ -1,9 +1,10 @@
 plugins {
     id 'java'
+    id 'org.graalvm.buildtools.native' version '0.10.6'
 }
 
 group = 'org.rem'
-version = '1.0-SNAPSHOT'
+version = '1.0.0'
 
 repositories {
     mavenCentral()
@@ -20,4 +21,38 @@ dependencies {
 
 test {
     useJUnitPlatform()
+}
+
+graalvmNative {
+    binaries.configureEach {
+        // common options
+        it.verbose = true
+        it.resources.autodetect()
+        jvmArgs = ['--sun-misc-unsafe-memory-access=allow']
+    }
+
+    binaries.main {
+        // options to configure the main binary
+        imageName = 'rem'
+        mainClass = 'org.rem.Main'
+
+        fallback = true
+
+        buildArgs.add('-O3')
+        buildArgs.add('-march=native')
+        buildArgs.add('-H:+AddAllCharsets')
+        buildArgs.add('-H:MaxRuntimeCompileMethods=5400')
+        buildArgs.add('-H:+UnlockExperimentalVMOptions')
+        buildArgs.add('--initialize-at-run-time=org.bytedeco')
+        buildArgs.add('--initialize-at-build-time=org.jspecify')
+        buildArgs.add('--initialize-at-build-time=com.norswap')
+        buildArgs.add('--enable-native-access=ALL-UNNAMED')
+        buildArgs.add('-Dpolyglot.image-build-time.PreinitializeContexts=rem')
+    }
+
+    binaries.test {
+        // options to configure the test binary
+        quickBuild = true
+        debug = true
+    }
 }
