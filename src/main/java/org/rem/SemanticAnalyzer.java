@@ -152,14 +152,13 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           .by(r -> {
             IType opType = r.get(0);
 
-            // carry the type of the right expression
             r.set(0, opType);
-
-            if (!TypeUtil.isIntegerType(opType))
+            if (!TypeUtil.isIntegerType(opType)) {
               r.error(
                 String.format("Invalid bitwise operation '%s' on value of type %s", expr.op.literal(), opType),
                 expr
               );
+            }
           });
         break;
       }
@@ -169,11 +168,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           .by(r -> {
             IType opType = r.get(0);
 
-            // carry the type of the right expression
             r.set(0, opType);
-
-            if (!TypeUtil.isNumericType(opType))
+            if (!TypeUtil.isNumericType(opType)) {
               r.error(String.format("Invalid operation '%s' on value of type %s", expr.op.literal(), opType), expr);
+            }
           });
         break;
       }
@@ -184,8 +182,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           .using(expr.right, "type")
           .by(r -> {
             IType opType = r.get(0);
-            if (!TypeUtil.isBoolean(opType))
+            if (!TypeUtil.isBoolean(opType)) {
               r.error("Cannot negate value of type: " + opType, expr);
+            }
           });
         break;
       }
@@ -210,9 +209,27 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (expr.op.isArithemetic()) {
 
           if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
-            if(expr.op.type() == TokenType.DIVIDE) {
-              if(TypeUtil.isIntegerType(left)) {
-                left = F32Type.INSTANCE;
+            var maxType = TypeUtil.max(left, right);
+
+            if (expr.op.type() == TokenType.DIVIDE) {
+              maxType = TypeUtil.max(maxType, F32Type.INSTANCE);
+
+              if (left.less(maxType)) {
+                IType finalLeft = maxType;
+                R.rule(expr.left, "cast")
+                  .using(expr.left, "type")
+                  .by(r1 -> r1.set(0, finalLeft));
+              }
+
+              if (right.less(maxType)) {
+                IType finalRight = maxType;
+                R.rule(expr.right, "cast")
+                  .using(expr.right, "type")
+                  .by(r1 -> r1.set(0, finalRight));
+              }
+            } else if (expr.op.type() == TokenType.FLOOR) {
+              if (TypeUtil.isFloatType(left)) {
+                left = I64Type.INSTANCE;
 
                 IType finalLeft = left;
                 R.rule(expr.left, "cast")
@@ -220,53 +237,32 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
                   .by(r1 -> r1.set(0, finalLeft));
               }
 
-              if(TypeUtil.isIntegerType(right)) {
-                right = F32Type.INSTANCE;
+              if (TypeUtil.isFloatType(right)) {
+                right = I64Type.INSTANCE;
 
                 IType finalRight = right;
                 R.rule(expr.right, "cast")
                   .using(expr.right, "type")
                   .by(r1 -> r1.set(0, finalRight));
               }
-            } else if(expr.op.type() == TokenType.FLOOR) {
-              if(TypeUtil.isFloatType(left)) {
-                left = I32Type.INSTANCE;
 
-                IType finalLeft = left;
+              maxType = I64Type.INSTANCE;
+            } else {
+              final var finalMaxType = maxType;
+
+              if (left != maxType) {
                 R.rule(expr.left, "cast")
                   .using(expr.left, "type")
-                  .by(r1 -> r1.set(0, finalLeft));
+                  .by(r1 -> r1.set(0, finalMaxType));
               }
 
-              if(TypeUtil.isFloatType(right)) {
-                right = I32Type.INSTANCE;
-
-                IType finalRight = right;
+              if (right != maxType) {
                 R.rule(expr.right, "cast")
                   .using(expr.right, "type")
-                  .by(r1 -> r1.set(0, finalRight));
+                  .by(r1 -> r1.set(0, finalMaxType));
               }
             }
 
-            final var maxType = TypeUtil.max(left, right);
-
-            if(left.lessOrGreater(maxType)) {
-//              left = maxType;
-
-              R.rule(expr.left, "cast")
-                .using(expr.left, "type")
-                .by(r1 -> r1.set(0, maxType));
-            }
-
-            if(right.lessOrGreater(maxType)) {
-//              right = maxType;
-
-              R.rule(expr.right, "cast")
-                .using(expr.right, "type")
-                .by(r1 -> r1.set(0, maxType));
-            }
-
-//            System.out.println("OP = "+expr.op.literal()+", Left: "+left+", Right: "+right+", Max: "+maxType);
             r.set(0, maxType);
           } else {
             r.error(arithmeticError(expr.op, left, right), expr);
@@ -304,7 +300,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         if (expr.op.isLogical()) {
           r.set(0, BoolType.INSTANCE);
 
-          if((expr.op.type() == TokenType.AND || expr.op.type() == TokenType.OR)
+          if ((expr.op.type() == TokenType.AND || expr.op.type() == TokenType.OR)
             && !(TypeUtil.isBoolean(left) && TypeUtil.isBoolean(right))) {
             r.errorFor("Both sides of `and` and `or` operator must resolve to boolean", expr);
           }
@@ -317,6 +313,19 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           if (!isComparableTo(left, right)) {
             r.errorFor(String.format("Comparison on incomparable types %s and %s", left, right), expr);
           }
+        }
+
+        final IType maxType = TypeUtil.max(left, right);
+        if (left != maxType) {
+          R.rule(expr.left, "cast")
+            .using(expr.left, "type")
+            .by(r1 -> r1.set(0, maxType));
+        }
+
+        if (right != maxType) {
+          R.rule(expr.right, "cast")
+            .using(expr.right, "type")
+            .by(r1 -> r1.set(0, maxType));
         }
 
         r.set(0, BoolType.INSTANCE);
@@ -347,7 +356,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType type = r.get(0);
 
-        if(!TypeUtil.isNumericType(type)) {
+        if (!TypeUtil.isNumericType(type)) {
           r.errorFor("Cannot increment non-numeric value of type " + type, expr);
         }
 
@@ -364,7 +373,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       .by(r -> {
         IType type = r.get(0);
 
-        if(!TypeUtil.isNumericType(type)) {
+        if (!TypeUtil.isNumericType(type)) {
           r.errorFor("Cannot decrement non-numeric value of type " + type, expr);
         }
 
@@ -476,10 +485,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     dependencies[0] = expr.callee.attr("type");
     for (int i = 0; i < expr.args.size(); i++) {
       Expression arg = expr.args.get(i);
+      visitExpression(arg);
 
       dependencies[i + 1] = arg.attr("type");
       R.set(arg, "index", i);
-      visitExpression(arg);
     }
 
     visitExpression(expr.callee);
@@ -517,7 +526,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           IType argType = r.get(i + 1);
           IType paramType = params[i];
 
-          if (!argType.isAssignableFrom(paramType)) {
+          if (!paramType.isAssignableFrom(argType)) {
             Expression expression = expr.args.get(i);
             if (expression instanceof Expression.Dict dict && !dict.keys.isEmpty()) {
               expression = dict.keys.getFirst();
@@ -532,18 +541,18 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
               ),
               expression
             );
-          } else if(argType != paramType) {
+
+          } else if (argType != paramType) {
             // ensure correct casting
             R.rule(expr.args.get(i), "cast")
-              .using(expr.args.get(i), "type")
               .by(r1 -> {
-                if(argType instanceof ArrayType argArray && paramType instanceof ArrayType paramArray) {
-                  if(paramArray.getLength() == 0) {
+                if (argType instanceof ArrayType argArray && paramType instanceof ArrayType paramArray) {
+                  if (paramArray.getLength() == 0) {
                     paramArray.setLength(argArray.getLength());
                   }
                 }
 
-                r1.set(0, argType);
+                r1.set(0, paramType);
               });
           }
         }
@@ -696,8 +705,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
         // TODO: Handle non integer indexing on maps
 
-        if (!TypeUtil.isIntegerType(type))
+        if (!TypeUtil.isIntegerType(type)) {
           r.error("Indexing an array using a value that's not assignable to `i32`", expr.argument);
+        }
       });
 
     R.rule(expr, "type")
@@ -708,14 +718,14 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         // TODO: Handle maps
 
         if (type instanceof ArrayType arrayType) {
-          if(arrayType.getLength() == 0) {
+          if (arrayType.getLength() == 0) {
             r.errorFor("Cannot index empty array or array of unknown length", expr.callee);
-          } else if(expr.argument instanceof Expression.Int32 int32) {
-            if(int32.value < 0 || int32.value > arrayType.getLength() - 1) {
+          } else if (expr.argument instanceof Expression.Int32 int32) {
+            if (int32.value < 0 || int32.value > arrayType.getLength() - 1) {
               r.errorFor("Array index out of range", expr.argument);
             }
-          } else if(expr.argument instanceof Expression.Int64 int64) {
-            if(int64.value < 0 || int64.value > arrayType.getLength() - 1) {
+          } else if (expr.argument instanceof Expression.Int64 int64) {
+            if (int64.value < 0 || int64.value > arrayType.getLength() - 1) {
               r.errorFor("Array index out of range", expr.argument);
             }
           }
@@ -746,7 +756,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       final AST context = this.inferenceContext;
 
       if (context instanceof Statement.Var varStmt) {
-        if(varStmt.typedName.type == null) {
+        if (varStmt.typedName.type == null) {
           R.rule()
             .by(r -> r.errorFor("Cannot assign empty array to untyped variable", expr));
         }
@@ -754,9 +764,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
         R.rule(expr, "type")
           .using(context, "type")
           .by(Rule::copyFirst);
-      } else if (context instanceof Expression.Call) {
+      } else if (context instanceof Expression.Call call) {
         R.rule(expr, "type")
-          .using(((Expression.Call) context).callee.attr("type"), expr.attr("index"))
+          .using(call.callee.attr("type"), expr.attr("index"))
           .by(r -> {
             DefType funType = r.get(0);
             r.set(0, funType.getParameterTypes()[(int) r.get(1)]);
@@ -1039,9 +1049,9 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
           if (TypeUtil.isNumericType(left) && TypeUtil.isNumericType(right)) {
 
-            if(left != right) {
-              if(expr.op.type() == TokenType.FLOOR) {
-                if(TypeUtil.isFloatType(left)) {
+            if (left != right) {
+              if (expr.op.type() == TokenType.FLOOR) {
+                if (TypeUtil.isFloatType(left)) {
                   r.errorFor("Operation prohibited as it will alter type of expression", expr.value);
                 }
               }
@@ -1120,10 +1130,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
       });
 
     List<Statement> dependencies = new ArrayList<>();
-    if(stmt.thenBranch != null) {
+    if (stmt.thenBranch != null) {
       dependencies.add(stmt.thenBranch);
     }
-    if(stmt.elseBranch != null) {
+    if (stmt.elseBranch != null) {
       dependencies.add(stmt.elseBranch);
     }
 
@@ -1143,7 +1153,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
     visitStatement(stmt.body);
     currentLoop = previousLoop;
 
-    if(stmt.condition != null) {
+    if (stmt.condition != null) {
       visitExpression(stmt.condition);
 
       R.rule()
@@ -1233,7 +1243,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitContinueStatement(Statement.Continue stmt) {
-    if(currentLoop == null) {
+    if (currentLoop == null) {
       R.rule()
         .by(r -> r.errorFor("Cannot use continue outside of loop", stmt));
     } else {
@@ -1243,7 +1253,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
   @Override
   public void visitBreakStatement(Statement.Break stmt) {
-    if(currentLoop == null) {
+    if (currentLoop == null) {
       R.rule()
         .by(r -> r.errorFor("Cannot use break outside of loop", stmt));
     } else {
@@ -1303,7 +1313,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             } else {
 
               // ensure that proper value is returned
-              if(actual != expected) {
+              if (actual != expected) {
                 R.rule(stmt, "cast")
                   .using(method.returnType, "value")
                   .by(Rule::copyFirst);
@@ -1342,7 +1352,11 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             } else {
 
               // ensure that proper value is returned
-              if(actual != expected) {
+              if (actual != expected) {
+                R.rule(stmt.value, "cast")
+                  .using(function.returnType, "value")
+                  .by(Rule::copyFirst);
+
                 R.rule(stmt, "cast")
                   .using(function.returnType, "value")
                   .by(Rule::copyFirst);
@@ -1485,7 +1499,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
             expectedArrayType.setLength(actualArrayType1.getLength());
           }
 
-          if(expectedArrayType.getType() != actualArrayType1.getType()) {
+          if (expectedArrayType.getType() != actualArrayType1.getType()) {
             actualArrayType1.setType(expectedArrayType.getType());
           }
         }
@@ -1519,6 +1533,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
         for (int i = 0; i < paramTypes.length; ++i) {
           paramTypes[i] = r.get(i + 1);
+
+          if(paramTypes[i] instanceof ArrayType) {
+            paramTypes[i] = new PointerType(paramTypes[i]);
+          }
         }
 
         r.set(0, new DefType(rType, stmt.isVariadic, paramTypes));
@@ -1559,6 +1577,10 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
 
         for (int i = 0; i < paramTypes.length; ++i) {
           paramTypes[i] = r.get(i + 1);
+
+          if(paramTypes[i] instanceof ArrayType) {
+            paramTypes[i] = new PointerType(paramTypes[i]);
+          }
         }
 
         r.set(0, new DefType(rType, isVariadic, paramTypes));
@@ -1773,7 +1795,7 @@ public final class SemanticAnalyzer implements Expression.VoidVisitor, Statement
           r.errorFor("Arrays cannot be of void type", typed.type);
         }
 
-        if(typed.size < 1) {
+        if (typed.size < 1) {
           r.errorFor("Array sizes must be greater than or equal to 1", typed);
         }
 

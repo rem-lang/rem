@@ -18,4 +18,5 @@ public enum TypeEnum {
   DEF,
   CLASS,
   TYPE,
+  POINTER,
 }

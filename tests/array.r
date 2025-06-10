@@ -1,7 +1,7 @@
 @def static putchar(c: i32) i32
-@def static puts(c: [4096]i8) i32
+@def static puts(c: [4]i8) i32
 
-def contra(v: [4]i32) {
+def contra(v: [4]i8) {
   for var i = 0; v[i] != 0; i++ {
     putchar(v[i])
   }
@@ -29,6 +29,8 @@ def main() {
   var g = 66
   var h = 67
 
-  var e: [4]i8 = [f, g, h, 0]
-  contra(e)
+  var j: [4]i8 = [f, g, h, 0]
+  contra(j)
+
+#   contra([f, g, h, 0])
 }

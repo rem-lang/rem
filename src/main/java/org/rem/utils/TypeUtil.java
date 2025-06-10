@@ -14,6 +14,12 @@ public class TypeUtil {
     return a.greaterOrEqual(b) ? a : b;
   }
 
+  public static IType min(IType a, IType b) {
+    if(a == null) return b;
+    if(b == null) return a;
+    return a.lessOrEqual(b) ? a : b;
+  }
+
   public static boolean isIntegerType(IType type) {
     return type.greaterOrEqual(I8Type.INSTANCE) && type.lessOrEqual(I128Type.INSTANCE);
   }

@@ -30,16 +30,18 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
       LLVMInitializeAllAsmParsers();
       LLVMInitializeAllAsmPrinters();
 
+      var defaultTriple = LLVMGetDefaultTargetTriple();
+
       var target = new LLVMTargetRef();
-      LLVMGetTargetFromTriple(LLVMGetDefaultTargetTriple(), target, error);
+      LLVMGetTargetFromTriple(defaultTriple, target, error);
       if(!error.isNull()) {
         System.err.printf("error: %s\n", error.getString());
       }
       LLVMDisposeMessage(error);
 
-      var machine = LLVMCreateTargetMachine(target, LLVMGetDefaultTargetTriple(), new BytePointer("generic"), LLVMGetHostCPUFeatures(), LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+      var machine = LLVMCreateTargetMachine(target, defaultTriple, new BytePointer("generic"), LLVMGetHostCPUFeatures(), LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
 
-      LLVMSetTarget(llvmTarget.getModule(), LLVMGetDefaultTargetTriple());
+      LLVMSetTarget(llvmTarget.getModule(), defaultTriple);
       var dataLayout = LLVMCreateTargetDataLayout(machine);
       var dataLayoutStr = LLVMCopyStringRepOfTargetData(dataLayout);
 
@@ -56,6 +58,8 @@ public class LLVMGenerator implements IGenerator<LLVMValueRef> {
         System.err.printf("error: %s\n", error.getString());
       }
       LLVMDisposeMessage(error);
+
+      LLVMDisposeMessage(defaultTriple);
 
       return linkToExe(objectFile, outputName);
 
